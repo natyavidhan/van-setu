@@ -6,17 +6,19 @@ from app.services.raster_service import RasterService
 from app.services.tile_service import TileService
 from app.services.road_service import RoadService
 from app.services.aqi_service import AQIService
+from app.services.corridor_service import CorridorService
 
 # Global service instances
 _raster_service: RasterService | None = None
 _tile_service: TileService | None = None
 _road_service: RoadService | None = None
 _aqi_service: AQIService | None = None
+_corridor_service: CorridorService | None = None
 
 
 def init_services():
     """Initialize all services (called at startup)."""
-    global _raster_service, _tile_service, _road_service, _aqi_service
+    global _raster_service, _tile_service, _road_service, _aqi_service, _corridor_service
     settings = get_settings()
     
     # Initialize raster service and load data
@@ -33,15 +35,20 @@ def init_services():
     _aqi_service = AQIService(settings)
     print("\n📡 Initializing AQI data...")
     _aqi_service.fetch_stations()
+    
+    # Initialize corridor service (depends on road service)
+    _corridor_service = CorridorService(settings)
+    print("🔗 Corridor aggregation service initialized")
 
 
 def cleanup_services():
     """Cleanup services (called at shutdown)."""
-    global _raster_service, _tile_service, _road_service, _aqi_service
+    global _raster_service, _tile_service, _road_service, _aqi_service, _corridor_service
     _raster_service = None
     _tile_service = None
     _road_service = None
     _aqi_service = None
+    _corridor_service = None
 
 
 def get_raster_service() -> RasterService:
@@ -70,3 +77,10 @@ def get_aqi_service() -> AQIService:
     if _aqi_service is None:
         raise RuntimeError("AQI service not initialized")
     return _aqi_service
+
+
+def get_corridor_service() -> CorridorService:
+    """Dependency to get corridor service."""
+    if _corridor_service is None:
+        raise RuntimeError("Corridor service not initialized")
+    return _corridor_service

@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap, useMapEvents, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getTileUrl, roadsApi, statsApi, aqiApi } from '../api';
+import { getTileUrl, roadsApi, statsApi, aqiApi, corridorsApi } from '../api';
 import './Map.css';
 
 // Delhi NCT center and bounds
@@ -183,7 +183,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   useEffect(() => {
     if (activeLayers.corridors && !corridors) {
       setLoading(prev => ({ ...prev, corridors: true }));
-      roadsApi.corridors(85, true)  // Include AQI in scoring
+      corridorsApi.list(0.70, 200, true)  // Default thresholds: 0.70 priority, 200m min length, include AQI
         .then(res => setCorridors(res.data))
         .catch(err => console.error('Failed to load corridors:', err))
         .finally(() => setLoading(prev => ({ ...prev, corridors: false })));
@@ -222,14 +222,13 @@ export default function Map({ activeLayers, onStatsUpdate }) {
     }
   }, []);
 
-  // Style for corridors (high priority = red)
-  // Now uses priority_score (multi-exposure) instead of just GDI
+  // Style for corridors (color by mean_priority)
   const corridorStyle = (feature) => {
-    const priority = feature.properties?.priority_score ?? feature.properties?.gdi_mean ?? 0.5;
+    const meanPriority = feature.properties?.mean_priority ?? 0.5;
     return {
-      color: priority > 0.7 ? '#d73027' : priority > 0.5 ? '#fc8d59' : '#fee08b',
+      color: meanPriority > 0.7 ? '#d73027' : meanPriority > 0.5 ? '#fc8d59' : '#fee08b',
       weight: 4,
-      opacity: 0.9,
+      opacity: 0.8,
     };
   };
 
@@ -312,13 +311,16 @@ export default function Map({ activeLayers, onStatsUpdate }) {
             onEachFeature={(feature, layer) => {
               const props = feature.properties;
               if (props) {
-                const priority = props.priority_score ?? props.gdi_mean;
-                const aqi = props.aqi_raw;
+                const priority = props.mean_priority;
+                const length = props.length_m;
+                const aqi = props.mean_aqi;
+                const segments = props.segment_count;
                 layer.bindPopup(`
-                  <b>Proposed Green Corridor</b><br/>
-                  Road: ${props.name || 'Unnamed'}<br/>
-                  Priority Score: ${priority?.toFixed(3) || 'N/A'}<br/>
-                  ${aqi ? `PM2.5 AQI: ${Math.round(aqi)}` : ''}<br/>
+                  <b>Priority Corridor</b><br/>
+                  Length: ${length?.toFixed(0) || 'N/A'} m<br/>
+                  Segments: ${segments || '—'}<br/>
+                  Mean Priority: ${priority?.toFixed(3) || 'N/A'}<br/>
+                  ${aqi ? `Mean PM2.5: ${Math.round(aqi)} μg/m³` : 'AQI: —'}<br/>
                   Risk Level: ${priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate'}
                 `);
               }

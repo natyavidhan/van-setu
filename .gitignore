@@ -2,3 +2,7 @@
 cache/
 *.tif
 __pycache__/
+.env
+backend/.env
+*.pyc
+.pytest_cache/

@@ -143,7 +143,7 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 color="#666"
               />
               <Toggle
-                label="Green Corridors"
+                label="Priority Corridors"
                 checked={activeLayers.corridors}
                 onChange={() => toggleLayer('corridors')}
                 color="#fc8d59"

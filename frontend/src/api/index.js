@@ -52,6 +52,22 @@ export const aqiApi = {
 };
 
 /**
+ * Corridors endpoints (aggregated priority corridors)
+ */
+export const corridorsApi = {
+  list: (threshold = 0.70, minLength = 200, includeAqi = true) => 
+    api.get('/corridors', { 
+      params: { 
+        priority_threshold: threshold, 
+        min_length: minLength,
+        include_aqi: includeAqi 
+      } 
+    }),
+  detail: (corridorId) => api.get(`/corridors/${corridorId}`),
+  summary: () => api.get('/corridors/stats/summary'),
+};
+
+/**
  * Get tile URL template for Leaflet
  */
 export const getTileUrl = (layer) => {

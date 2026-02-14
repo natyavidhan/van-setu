@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     )
     
     # Import routers here to avoid circular imports
-    from app.routers import layers, tiles, roads, stats, aqi
+    from app.routers import layers, tiles, roads, stats, aqi, corridors
     
     # Include routers
     app.include_router(layers.router, prefix=settings.api_prefix, tags=["Layers"])
@@ -74,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(roads.router, prefix=settings.api_prefix, tags=["Roads"])
     app.include_router(stats.router, prefix=settings.api_prefix, tags=["Statistics"])
     app.include_router(aqi.router, prefix=settings.api_prefix, tags=["Air Quality"])
+    app.include_router(corridors.router, prefix=settings.api_prefix, tags=["Corridors"])
     
     @app.get("/", tags=["Health"])
     async def root():

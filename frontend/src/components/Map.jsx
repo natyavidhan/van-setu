@@ -175,6 +175,8 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   const [aqiStations, setAqiStations] = useState(null);
   const [pointData, setPointData] = useState(null);
   const [loading, setLoading] = useState({});
+  const [hoveredCorridor, setHoveredCorridor] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   // Determine which raster layer is active (only one at a time for clarity)
   const activeRaster = activeLayers.gdi ? 'gdi' : activeLayers.lst ? 'lst' : activeLayers.ndvi ? 'ndvi' : null;
@@ -183,7 +185,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   useEffect(() => {
     if (activeLayers.corridors && !corridors) {
       setLoading(prev => ({ ...prev, corridors: true }));
-      corridorsApi.list(0.70, 200, true)  // Default thresholds: 0.70 priority, 200m min length, include AQI
+      corridorsApi.list(0.60, 200, true)  // Thresholds: 0.60 priority, 200m min length, include AQI
         .then(res => setCorridors(res.data))
         .catch(err => console.error('Failed to load corridors:', err))
         .finally(() => setLoading(prev => ({ ...prev, corridors: false })));
@@ -222,15 +224,43 @@ export default function Map({ activeLayers, onStatsUpdate }) {
     }
   }, []);
 
-  // Style for corridors (color by mean_priority)
+  // Style for corridors (color by mean_priority, highlight on hover)
+  // Risk thresholds relative to filtered range (min 0.60):
+  // - Critical: top 25% (>0.80)
+  // - High: middle 50% (0.70-0.80)
+  // - Elevated: bottom 25% (0.60-0.70)
   const corridorStyle = (feature) => {
     const meanPriority = feature.properties?.mean_priority ?? 0.5;
+    const isHovered = hoveredCorridor === feature.properties?.corridor_id;
+    let color;
+    if (meanPriority > 0.80) color = '#d73027';      // Critical - dark red
+    else if (meanPriority > 0.70) color = '#fc8d59'; // High - orange
+    else color = '#fee08b';                          // Elevated - yellow
     return {
-      color: meanPriority > 0.7 ? '#d73027' : meanPriority > 0.5 ? '#fc8d59' : '#fee08b',
-      weight: 4,
-      opacity: 0.8,
+      color,
+      weight: isHovered ? 7 : 4,
+      opacity: isHovered ? 1 : 0.8,
     };
   };
+
+  // Handle corridor hover events
+  const handleCorridorHover = useCallback((feature, layer) => {
+    layer.on({
+      mouseover: (e) => {
+        const props = feature.properties;
+        setHoveredCorridor(props?.corridor_id);
+        setTooltipPos({ x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+        // Bring to front on hover
+        e.target.bringToFront();
+      },
+      mouseout: () => {
+        setHoveredCorridor(null);
+      },
+      mousemove: (e) => {
+        setTooltipPos({ x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+      },
+    });
+  }, []);
 
   // Style for roads (subtle gray)
   const roadStyle = {
@@ -305,10 +335,11 @@ export default function Map({ activeLayers, onStatsUpdate }) {
         {/* Corridors layer */}
         {activeLayers.corridors && corridors && (
           <GeoJSON
-            key="corridors"
+            key={`corridors-${hoveredCorridor || 'none'}`}
             data={corridors}
             style={corridorStyle}
             onEachFeature={(feature, layer) => {
+              handleCorridorHover(feature, layer);
               const props = feature.properties;
               if (props) {
                 const priority = props.mean_priority;
@@ -321,7 +352,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
                   Segments: ${segments || '—'}<br/>
                   Mean Priority: ${priority?.toFixed(3) || 'N/A'}<br/>
                   ${aqi ? `Mean PM2.5: ${Math.round(aqi)} μg/m³` : 'AQI: —'}<br/>
-                  Risk Level: ${priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate'}
+                  Risk Level: ${priority > 0.8 ? 'Critical' : priority > 0.7 ? 'High' : 'Elevated'}
                 `);
               }
             }}
@@ -379,6 +410,69 @@ export default function Map({ activeLayers, onStatsUpdate }) {
           Loading {loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...
         </div>
       )}
+
+      {/* Corridor Hover Tooltip */}
+      {hoveredCorridor && corridors?.features && (() => {
+        const feature = corridors.features.find(f => f.properties?.corridor_id === hoveredCorridor);
+        if (!feature) return null;
+        const props = feature.properties;
+        const priority = props.mean_priority;
+        // Risk levels within filtered corridors (all are already high-priority)
+        const riskLevel = priority > 0.80 ? 'Critical' : priority > 0.70 ? 'High' : 'Elevated';
+        const riskColor = priority > 0.80 ? '#d73027' : priority > 0.70 ? '#fc8d59' : '#fee08b';
+        
+        return (
+          <div 
+            className="corridor-tooltip"
+            style={{ 
+              left: tooltipPos.x + 15, 
+              top: tooltipPos.y - 10,
+            }}
+          >
+            <div className="tooltip-header">
+              <span className="risk-badge" style={{ background: riskColor }}>
+                {riskLevel}
+              </span>
+              Priority Corridor
+            </div>
+            <div className="tooltip-content">
+              <div className="tooltip-row">
+                <span className="tooltip-label">📏 Length</span>
+                <span className="tooltip-value">{(props.length_m / 1000).toFixed(2)} km</span>
+              </div>
+              <div className="tooltip-row">
+                <span className="tooltip-label">🔗 Segments</span>
+                <span className="tooltip-value">{props.segment_count}</span>
+              </div>
+              <div className="tooltip-row">
+                <span className="tooltip-label">📊 Priority</span>
+                <span className="tooltip-value" style={{ color: riskColor }}>
+                  {(priority * 100).toFixed(1)}%
+                </span>
+              </div>
+              {props.mean_aqi && (
+                <div className="tooltip-row">
+                  <span className="tooltip-label">💨 PM2.5</span>
+                  <span className="tooltip-value">{Math.round(props.mean_aqi)} μg/m³</span>
+                </div>
+              )}
+              {props.mean_heat && (
+                <div className="tooltip-row">
+                  <span className="tooltip-label">🌡️ Heat</span>
+                  <span className="tooltip-value">{(props.mean_heat * 100).toFixed(0)}%</span>
+                </div>
+              )}
+              {props.mean_ndvi && (
+                <div className="tooltip-row">
+                  <span className="tooltip-label">🌿 Green</span>
+                  <span className="tooltip-value">{(props.mean_ndvi * 100).toFixed(0)}%</span>
+                </div>
+              )}
+            </div>
+            <div className="tooltip-hint">Click for details</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

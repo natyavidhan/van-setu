@@ -15,7 +15,7 @@ from app.services.corridor_service import CorridorService
 router = APIRouter()
 
 
-@router.get("/corridors")
+@router.get("/priority-corridors")
 async def get_corridors(
     priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0, description="Min priority score for corridor eligibility"),
     min_length: float = Query(default=200.0, ge=0.0, description="Minimum corridor length in meters"),
@@ -101,7 +101,7 @@ async def get_corridors(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/corridors/{corridor_id}")
+@router.get("/priority-corridors/{corridor_id}")
 async def get_corridor_detail(
     corridor_id: str,
     priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0),
@@ -181,7 +181,7 @@ async def get_corridor_detail(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/corridors/stats/summary")
+@router.get("/priority-corridors/stats/summary")
 async def get_corridors_summary(
     priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0),
     min_length: float = Query(default=200.0, ge=0.0),

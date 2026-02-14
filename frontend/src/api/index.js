@@ -55,16 +55,16 @@ export const aqiApi = {
  * Corridors endpoints (aggregated priority corridors)
  */
 export const corridorsApi = {
-  list: (threshold = 0.70, minLength = 200, includeAqi = true) => 
-    api.get('/corridors', { 
+  list: (threshold = 0.60, minLength = 200, includeAqi = true) => 
+    api.get('/priority-corridors', { 
       params: { 
         priority_threshold: threshold, 
         min_length: minLength,
         include_aqi: includeAqi 
       } 
     }),
-  detail: (corridorId) => api.get(`/corridors/${corridorId}`),
-  summary: () => api.get('/corridors/stats/summary'),
+  detail: (corridorId) => api.get(`/priority-corridors/${corridorId}`),
+  summary: () => api.get('/priority-corridors/stats/summary'),
 };
 
 /**

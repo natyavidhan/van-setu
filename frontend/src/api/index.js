@@ -63,8 +63,65 @@ export const corridorsApi = {
         include_aqi: includeAqi 
       } 
     }),
+  
+  /**
+   * Stream corridors one-by-one using fetch with ReadableStream.
+   * Calls onEvent callback for each SSE event.
+   */
+  stream: async (threshold = 0.60, minLength = 200, includeAqi = true, onEvent) => {
+    const params = new URLSearchParams({
+      priority_threshold: threshold,
+      min_length: minLength,
+      include_aqi: includeAqi
+    });
+    
+    const response = await fetch(`${API_BASE}/priority-corridors/stream?${params}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+      
+      let eventType = null;
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ') && eventType) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            onEvent({ type: eventType, data });
+          } catch (e) {
+            console.warn('Failed to parse SSE data:', line);
+          }
+          eventType = null;
+        }
+      }
+    }
+  },
+  
   detail: (corridorId) => api.get(`/priority-corridors/${corridorId}`),
   summary: () => api.get('/priority-corridors/stats/summary'),
+  
+  // Proposal endpoints
+  proposal: (corridorId) => api.get(`/priority-corridors/${corridorId}/proposal`),
+  
+  // Community feedback endpoints
+  getFeedback: (corridorId, limit = 10) => 
+    api.get(`/priority-corridors/${corridorId}/feedback`, { params: { limit } }),
+  addFeedback: (corridorId, comment) => 
+    api.post(`/priority-corridors/${corridorId}/feedback`, { comment }),
+  voteCorridor: (corridorId, upvote = true) => 
+    api.post(`/priority-corridors/${corridorId}/vote`, { upvote }),
+  voteFeedback: (feedbackId, upvote = true) => 
+    api.post(`/feedback/${feedbackId}/vote`, { upvote }),
+  getCommunity: (corridorId, feedbackLimit = 5) => 
+    api.get(`/priority-corridors/${corridorId}/community`, { params: { feedback_limit: feedbackLimit } }),
 };
 
 /**

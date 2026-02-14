@@ -1,311 +1,296 @@
-# 🧠 MASTER IMPLEMENTATION PROMPT — **PHASE 2: CORRIDOR AGGREGATION**
+# 🧠 MASTER IMPLEMENTATION PROMPT
 
-> **IMPORTANT:**
-> You are extending an existing application.
-> Do **not** rewrite, refactor, or “clean up” unrelated parts.
+## PHASE: INTERVENTION SUGGESTION + VISUALIZATION + COMMUNITY INPUT
 
----
-
-## ROLE & EXPECTATION
-
-You are a **senior geospatial backend + frontend engineer**.
-
-Your task is to add **corridor aggregation** on top of an existing **road-segment priority system**.
-
-You must:
-
-* Convert **individual road segments** into **continuous green corridors**
-* Preserve all existing segment-level APIs and UI
-* Add corridor functionality as a **new abstraction layer**
-
-This phase is about **grouping**, not budgeting, not reports, not carbon.
+> **IMPORTANT**
+> You are extending an existing FastAPI + React (Vite) application.
+>
+> The app already has:
+>
+> * Multi-exposure priority (NDVI + LST + AQI)
+> * Corridor geometries
+> * Corridor visualization on a Leaflet map
+>
+> ❌ Do NOT refactor core analytics
+> ❌ Do NOT change corridor detection logic
+>
+> Your job is to **translate corridors into understandable, community-oriented proposals**.
 
 ---
 
-## EXISTING SYSTEM (ASSUME THIS IS DONE)
+## ROLE
 
-### Backend
+You are a **full-stack geospatial product engineer** building a **collaborative urban planning prototype**.
 
-* FastAPI
-* MongoDB
-* Road segments stored with:
+Your goal is to make corridors:
 
-  * geometry
-  * heat_norm
-  * ndvi_norm
-  * aqi_norm
-  * final priority_score
-* API that returns road segments with priority
-
-### Frontend
-
-* React (Vite)
-* Map UI showing:
-
-  * Road segments
-  * Color-coded by priority
-* Segment hover + tooltip working
+* Understandable
+* Actionable
+* Open to public input
 
 ---
 
-## PHASE 2 OBJECTIVE
+## HIGH-LEVEL OBJECTIVE
 
 Upgrade the system from:
 
-> “These individual streets are high priority”
+> “These are priority corridors”
 
 to:
 
-> **“These are the top continuous corridors where intervention should happen.”**
+> **“Here is what could be done on this corridor, what it might look like, and what people think.”**
 
-A **corridor** is:
-
-* A **connected chain of adjacent road segments**
-* All segments have **high priority**
-* The geometry is continuous and meaningful
+This must directly satisfy the **Minimum Requirements**.
 
 ---
 
-## CORE DESIGN PRINCIPLES (MANDATORY)
+## PART 1 — INTERVENTION SUGGESTION ENGINE (BACKEND)
 
-* Corridors are **derived**, not manually drawn
-* Corridors must be:
+### 1️⃣ Define corridor exposure profile
 
-  * Deterministic
-  * Reproducible
-  * Explainable
-* Corridors must **not overlap**
-* Segments belong to **at most one corridor**
-* Segment-level functionality must remain untouched
-
----
-
-## BACKEND TASKS (STEP BY STEP)
-
----
-
-### 1️⃣ DEFINE “HIGH PRIORITY” SEGMENTS
-
-Create a reusable function that classifies a segment as **eligible for corridor aggregation**.
-
-Rules:
-
-* Use **priority_score** (already computed)
-* Threshold should be configurable (default example):
-
-  ```
-  priority_score >= 0.70
-  ```
-
-Do NOT hardcode this inline — make it a constant or config.
-
----
-
-### 2️⃣ BUILD SEGMENT CONNECTIVITY GRAPH
-
-Using road geometry:
-
-* Treat each segment as a node
-* Two segments are **connected** if:
-
-  * Their geometries touch or intersect
-  * OR their endpoints are within a small tolerance (e.g. 5–10 meters)
-
-Implementation options:
-
-* Shapely geometry touches/intersects
-* Spatial index (STRtree or MongoDB geo queries)
-
-This graph **must only include high-priority segments**.
-
----
-
-### 3️⃣ AGGREGATE CONNECTED COMPONENTS → CORRIDORS
-
-Algorithm:
-
-* For all eligible segments:
-
-  * Build adjacency graph
-  * Find **connected components**
-* Each connected component = **one corridor**
-
-For each corridor compute:
-
-* Corridor ID
-* List of segment IDs
-* Total length (meters)
-* Mean priority score
-* Mean AQI / heat / NDVI (optional but recommended)
-* Combined geometry (MultiLineString or merged LineString)
-
----
-
-### 4️⃣ FILTER OUT TRIVIAL CORRIDORS
-
-To avoid noise:
-
-* Discard corridors shorter than a minimum length
-
-  * Example: `< 200 meters`
-* This threshold must be configurable
-
----
-
-### 5️⃣ STORE CORRIDORS (NEW COLLECTION)
-
-Create a new MongoDB collection: `corridors`
-
-Example schema:
+For each corridor, compute and store:
 
 ```json
 {
-  "corridor_id": "uuid",
-  "segment_ids": [...],
-  "geometry": "GeoJSON",
-  "length_m": 1240,
-  "mean_priority": 0.82,
-  "mean_aqi": 0.76,
-  "created_at": "ISO-8601"
+  "heat_score": 0.78,
+  "pollution_score": 0.65,
+  "green_deficit_score": 0.42
 }
 ```
 
-Segments must NOT be duplicated across corridors.
+These already exist implicitly — just expose them cleanly.
 
 ---
 
-### 6️⃣ BACKEND APIS (NEW, READ-ONLY)
+### 2️⃣ Corridor type classification (RULE-BASED)
 
-Add **new endpoints** (do not modify existing ones):
+Implement **simple, deterministic rules**:
+
+```text
+IF heat_score is dominant
+→ corridor_type = "Heat Mitigation"
+
+IF pollution_score is dominant
+→ corridor_type = "Air Quality Buffer"
+
+IF green_deficit_score is dominant
+→ corridor_type = "Green Connectivity"
+
+IF mixed
+→ corridor_type = "Multi-Benefit"
+```
+
+⚠️ No ML. No tuning. No black box.
+
+---
+
+### 3️⃣ Map corridor type → suggested interventions
+
+Create a **static intervention lookup table**:
+
+```json
+{
+  "Heat Mitigation": [
+    "Continuous street tree canopy",
+    "Shaded pedestrian walkways",
+    "High-albedo or permeable paving"
+  ],
+  "Air Quality Buffer": [
+    "Dense roadside vegetation buffers",
+    "Green screens or hedges",
+    "Setback planting near traffic lanes"
+  ],
+  "Green Connectivity": [
+    "Tree-lined walking corridors",
+    "Cycle-friendly green streets",
+    "Pocket greens at intersections"
+  ],
+  "Multi-Benefit": [
+    "Mixed tree canopy and shaded paths",
+    "Cycle + pedestrian green corridors"
+  ]
+}
+```
+
+For each corridor:
+
+* Attach **1–3 suggested interventions**
+* Store them with the corridor document
+
+---
+
+### 4️⃣ Backend API additions
+
+Add **one new endpoint**:
 
 ```
-GET /corridors
+GET /corridors/{id}/proposal
 ```
 
 Returns:
 
-* corridor_id
-* length
-* mean_priority
-* bounding box
-
+```json
+{
+  "corridor_type": "Heat Mitigation",
+  "suggested_interventions": [...],
+  "exposure_breakdown": {...}
+}
 ```
-GET /corridors/{id}
-```
-
-Returns:
-
-* full geometry
-* all metrics
-* list of segment IDs
-
-These APIs must be fast and paginated if needed.
 
 ---
 
-## FRONTEND TASKS (STEP BY STEP)
+## PART 2 — BEFORE / AFTER VISUAL MOCKUP (FRONTEND)
+
+### 5️⃣ Conceptual “Before / After” visualization (NOT simulation)
+
+This is **illustrative**, not quantitative.
+
+#### BEFORE
+
+* Existing corridor geometry
+* Exposure color (current map)
+
+#### AFTER (mock)
+
+Overlay:
+
+* Tree icons along the corridor
+* Semi-transparent green shading
+* Optional dashed line for shaded walkway
+
+⚠️ This is a **visual suggestion**, not a predicted outcome.
 
 ---
 
-### 7️⃣ CORRIDOR LAYER TOGGLE
-
-Add a new map layer:
-
-* **“Priority Corridors”**
-* Off by default
-
-Behavior:
-
-* Displays corridor geometries
-* Thicker lines than segments
-* Colored by mean_priority
-
-Segments remain available as a separate layer.
-
----
-
-### 8️⃣ CORRIDOR INTERACTION
+### 6️⃣ UI Implementation
 
 When a corridor is clicked:
 
-* Highlight the full corridor
-* Dim everything else
-* Show a **corridor card** with:
+* Open a **Corridor Proposal Panel**
+* Tabs:
 
-  * Length
-  * Mean priority
-  * Mean AQI
-  * Number of segments
+  * **Overview**
+  * **Suggested Interventions**
+  * **Before / After**
 
-No reports, no PDFs yet — just info.
+Before/After can be:
 
----
-
-### 9️⃣ UI RULES
-
-* Corridor view must NOT clutter the map
-* Only show top N corridors by default (e.g., top 10)
-* Provide a slider or dropdown:
-
-  * “Show top X corridors”
+* Toggle switch
+* Or side-by-side map view (simple)
 
 ---
 
-## WHAT NOT TO DO (IMPORTANT)
+### 7️⃣ UI copy (important)
 
-❌ Do not introduce budgets
-❌ Do not introduce phases
-❌ Do not introduce carbon logic
-❌ Do not change AQI logic
-❌ Do not break segment APIs
-❌ Do not attempt “optimal path” or AI routing
+Use **careful language**:
 
-This phase is **pure aggregation**, nothing more.
+✅ “Suggested intervention”
+✅ “Conceptual illustration”
+❌ “Predicted impact”
+❌ “Simulated reduction”
+
+This keeps the prototype honest and defensible.
+
+---
+
+## PART 3 — COMMUNITY INPUT (LIGHTWEIGHT)
+
+### 8️⃣ User suggestions
+
+Allow users to:
+
+* Click a corridor
+* Submit a **text suggestion**:
+
+  * “Add benches”
+  * “Too narrow for trees”
+  * “Good cycling route”
+
+Backend:
+
+```
+POST /corridors/{id}/feedback
+```
+
+Store:
+
+```json
+{
+  "corridor_id": "...",
+  "comment": "...",
+  "timestamp": "...",
+  "votes": 0
+}
+```
+
+No authentication required (MVP).
+
+---
+
+### 9️⃣ Voting mechanism
+
+For each corridor:
+
+* 👍 Upvote
+* 👎 Downvote
+
+Votes:
+
+* Stored per corridor
+* Displayed as **community support indicator**
+* Do NOT affect analytics
+
+---
+
+### 10️⃣ Frontend display
+
+In Corridor Proposal Panel:
+
+* Show:
+
+  * Vote count
+  * Top 3 comments
+* Sort comments by votes
+
+Keep UI minimal.
+
+---
+
+## WHAT NOT TO DO (VERY IMPORTANT)
+
+❌ Do NOT recompute corridors based on votes
+❌ Do NOT introduce budgets or costs
+❌ Do NOT claim health or AQI reduction
+❌ Do NOT add login/auth
+❌ Do NOT over-design visuals
+
+This is **collaborative planning**, not execution.
 
 ---
 
 ## EXPECTED END STATE
 
-After this phase:
+After this phase, the platform:
 
-* The system clearly answers:
+✔ Identifies green corridors
+✔ Suggests **context-appropriate interventions**
+✔ Shows a **clear before/after vision**
+✔ Allows **public participation**
+✔ Stays scientifically honest
 
-  > “Which **continuous corridors** matter most?”
-* Segments still exist and work
-* Corridors are:
-
-  * Stored
-  * Queryable
-  * Visualized
-* The app feels like a **planning tool**, not a heatmap demo
+And **perfectly matches** the problem statement.
 
 ---
 
-## VERIFICATION CHECKLIST (MANDATORY)
+## FINAL CHECKLIST
 
-Before marking complete:
+Before finishing:
 
-* Segments still render correctly
-* Corridor results are stable across reloads
-* Changing priority threshold changes corridors
-* No segment appears in two corridors
-* Performance acceptable for Delhi-scale data
-
----
-
-## FINAL INSTRUCTION
-
-Implement corridor aggregation **cleanly and incrementally**.
-
-At the end, include:
-
-* Short code comments explaining:
-
-  * How corridors are built
-  * Why connected components were chosen
-* A brief README update:
-
-  * “How corridor aggregation works”
+* Corridor click → proposal panel works
+* Suggested interventions are consistent
+* Before/after toggle is clear
+* Users can comment and vote
+* No core analytics were altered
 
 ---
 

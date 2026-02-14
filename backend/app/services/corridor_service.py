@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 from datetime import datetime
 import time
+import hashlib
 
 from app.config import Settings
 
@@ -135,12 +136,14 @@ class FastCorridorAggregator:
         self,
         priority_threshold: float = DEFAULT_PRIORITY_THRESHOLD,
         min_length: float = DEFAULT_MIN_CORRIDOR_LENGTH,
-        connectivity_tolerance: float = CONNECTIVITY_TOLERANCE
+        connectivity_tolerance: float = CONNECTIVITY_TOLERANCE,
+        simple_mode: bool = True
     ):
         self.priority_threshold = priority_threshold
         self.min_length = min_length
         # Convert tolerance from meters to degrees (approximate)
         self.tolerance_deg = connectivity_tolerance / DEG_TO_M_LAT
+        self.simple_mode = simple_mode
     
     def aggregate(self, segments: gpd.GeoDataFrame) -> Tuple[List[CorridorMetrics], gpd.GeoDataFrame]:
         """
@@ -161,7 +164,7 @@ class FastCorridorAggregator:
             return [], gpd.GeoDataFrame(geometry=[], crs='EPSG:4326')
         
         t_filter = time.perf_counter()
-        
+
         # Step 2: Extract endpoints for spatial indexing
         endpoints, endpoint_to_segment = self._extract_endpoints(eligible)
         t_endpoints = time.perf_counter()
@@ -318,6 +321,19 @@ class FastCorridorAggregator:
         print(f"  🔗 Made {connections_made} connections using spatial index")
         return uf
     
+    def _generate_stable_corridor_id(self, indices: List[int]) -> str:
+        """
+        Generate a stable corridor ID based on sorted segment indices.
+        
+        This ensures the same set of segments always produces the same corridor_id,
+        making corridors referenceable across API calls.
+        """
+        sorted_indices = sorted(indices)
+        index_str = ",".join(str(i) for i in sorted_indices)
+        hash_obj = hashlib.sha256(index_str.encode())
+        # Use first 16 chars of hex digest for shorter but unique ID
+        return hash_obj.hexdigest()[:16]
+    
     def _create_corridor(
         self,
         segments: gpd.GeoDataFrame,
@@ -344,8 +360,11 @@ class FastCorridorAggregator:
         mean_ndvi = component['ndvi_norm'].mean() if 'ndvi_norm' in component.columns else None
         mean_aqi = component['aqi_norm'].mean() if 'aqi_norm' in component.columns else None
         
+        # Use stable ID based on segment indices for consistent references
+        corridor_id = self._generate_stable_corridor_id(indices)
+        
         metrics = CorridorMetrics(
-            corridor_id=str(uuid4()),
+            corridor_id=corridor_id,
             segment_ids=indices,
             length_m=float(length_m),
             mean_priority=float(mean_priority),
@@ -383,7 +402,7 @@ class CorridorService:
         """
         Aggregate road segments into continuous corridors.
         
-        Uses high-performance STRtree + Union-Find algorithm.
+        Uses STRtree + Union-Find for optimal connectivity detection.
         """
         if self._cache is not None and not force_refresh:
             return self._cache
@@ -393,7 +412,8 @@ class CorridorService:
         
         aggregator = FastCorridorAggregator(
             priority_threshold=self.priority_threshold,
-            min_length=self.min_length
+            min_length=self.min_length,
+            simple_mode=False
         )
         
         metrics, gdf = aggregator.aggregate(segments)

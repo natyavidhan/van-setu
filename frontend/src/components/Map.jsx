@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap, useMapEvents, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getTileUrl, roadsApi, statsApi, aqiApi, corridorsApi } from '../api';
+import CorridorProposalPanel from './CorridorProposalPanel';
 import './Map.css';
 
 // Delhi NCT center and bounds
@@ -177,18 +178,49 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   const [loading, setLoading] = useState({});
   const [hoveredCorridor, setHoveredCorridor] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [selectedCorridor, setSelectedCorridor] = useState(null);
+  const [showAfterVision, setShowAfterVision] = useState(false);
+  const [corridorStatus, setCorridorStatus] = useState(null);
 
   // Determine which raster layer is active (only one at a time for clarity)
   const activeRaster = activeLayers.gdi ? 'gdi' : activeLayers.lst ? 'lst' : activeLayers.ndvi ? 'ndvi' : null;
 
-  // Load corridors when toggled
+  // Load corridors with streaming (progressive loading)
   useEffect(() => {
     if (activeLayers.corridors && !corridors) {
       setLoading(prev => ({ ...prev, corridors: true }));
-      corridorsApi.list(0.60, 200, true)  // Thresholds: 0.60 priority, 200m min length, include AQI
-        .then(res => setCorridors(res.data))
-        .catch(err => console.error('Failed to load corridors:', err))
-        .finally(() => setLoading(prev => ({ ...prev, corridors: false })));
+      setCorridorStatus('Connecting...');
+      
+      // Initialize empty GeoJSON
+      setCorridors({
+        type: 'FeatureCollection',
+        features: []
+      });
+      
+      // Use streaming endpoint with fetch and callback
+      corridorsApi.stream(0.60, 200, true, (event) => {
+        if (event.type === 'status') {
+          setCorridorStatus(event.data.message);
+        } else if (event.type === 'corridor') {
+          setCorridors(prev => {
+            const newFeatures = [...prev.features, event.data];
+            setCorridorStatus(`Loaded ${newFeatures.length} corridors...`);
+            return { ...prev, features: newFeatures };
+          });
+        } else if (event.type === 'complete') {
+          console.log(`✅ Loaded ${event.data.count} corridors`);
+          setCorridorStatus(null);
+          setLoading(prev => ({ ...prev, corridors: false }));
+        } else if (event.type === 'error') {
+          console.error('Corridor streaming error:', event.data.error);
+          setCorridorStatus(null);
+          setLoading(prev => ({ ...prev, corridors: false }));
+        }
+      }).catch(err => {
+        console.error('Failed to stream corridors:', err);
+        setCorridorStatus(null);
+        setLoading(prev => ({ ...prev, corridors: false }));
+      });
     }
   }, [activeLayers.corridors, corridors]);
 
@@ -223,25 +255,6 @@ export default function Map({ activeLayers, onStatsUpdate }) {
       console.error('Failed to query point:', err);
     }
   }, []);
-
-  // Style for corridors (color by mean_priority, highlight on hover)
-  // Risk thresholds relative to filtered range (min 0.60):
-  // - Critical: top 25% (>0.80)
-  // - High: middle 50% (0.70-0.80)
-  // - Elevated: bottom 25% (0.60-0.70)
-  const corridorStyle = (feature) => {
-    const meanPriority = feature.properties?.mean_priority ?? 0.5;
-    const isHovered = hoveredCorridor === feature.properties?.corridor_id;
-    let color;
-    if (meanPriority > 0.80) color = '#d73027';      // Critical - dark red
-    else if (meanPriority > 0.70) color = '#fc8d59'; // High - orange
-    else color = '#fee08b';                          // Elevated - yellow
-    return {
-      color,
-      weight: isHovered ? 7 : 4,
-      opacity: isHovered ? 1 : 0.8,
-    };
-  };
 
   // Handle corridor hover events
   const handleCorridorHover = useCallback((feature, layer) => {
@@ -333,28 +346,41 @@ export default function Map({ activeLayers, onStatsUpdate }) {
         )}
 
         {/* Corridors layer */}
-        {activeLayers.corridors && corridors && (
+        {activeLayers.corridors && corridors && corridors.features && corridors.features.length > 0 && (
           <GeoJSON
-            key={`corridors-${hoveredCorridor || 'none'}`}
+            key={`corridors-${corridors.features.length}-${hoveredCorridor || 'none'}-${selectedCorridor?.properties?.corridor_id || ''}`}
             data={corridors}
-            style={corridorStyle}
+            style={(feature) => {
+              const meanPriority = feature.properties?.mean_priority ?? 0.5;
+              const isHovered = hoveredCorridor === feature.properties?.corridor_id;
+              const isSelected = selectedCorridor?.properties?.corridor_id === feature.properties?.corridor_id;
+              let color;
+              if (meanPriority > 0.80) color = '#d73027';
+              else if (meanPriority > 0.70) color = '#fc8d59';
+              else color = '#fee08b';
+              
+              // Show green overlay when "after" vision is active for selected corridor
+              if (isSelected && showAfterVision) {
+                color = '#1a9850';
+              }
+              
+              return {
+                color,
+                weight: isSelected ? 8 : isHovered ? 7 : 4,
+                opacity: isSelected ? 1 : isHovered ? 1 : 0.8,
+                dashArray: isSelected && showAfterVision ? '10, 5' : null,
+              };
+            }}
             onEachFeature={(feature, layer) => {
               handleCorridorHover(feature, layer);
-              const props = feature.properties;
-              if (props) {
-                const priority = props.mean_priority;
-                const length = props.length_m;
-                const aqi = props.mean_aqi;
-                const segments = props.segment_count;
-                layer.bindPopup(`
-                  <b>Priority Corridor</b><br/>
-                  Length: ${length?.toFixed(0) || 'N/A'} m<br/>
-                  Segments: ${segments || '—'}<br/>
-                  Mean Priority: ${priority?.toFixed(3) || 'N/A'}<br/>
-                  ${aqi ? `Mean PM2.5: ${Math.round(aqi)} μg/m³` : 'AQI: —'}<br/>
-                  Risk Level: ${priority > 0.8 ? 'Critical' : priority > 0.7 ? 'High' : 'Elevated'}
-                `);
-              }
+              
+              // Click to open proposal panel
+              layer.on('click', (e) => {
+                // Prevent map click event
+                e.originalEvent.stopPropagation();
+                setSelectedCorridor(feature);
+                setPointData(null); // Close point info panel
+              });
             }}
           />
         )}
@@ -407,7 +433,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
       {/* Loading indicators */}
       {(loading.corridors || loading.roads || loading.aqi) && (
         <div className="loading-indicator">
-          Loading {loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...
+          {corridorStatus || `Loading ${loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...`}
         </div>
       )}
 
@@ -469,10 +495,22 @@ export default function Map({ activeLayers, onStatsUpdate }) {
                 </div>
               )}
             </div>
-            <div className="tooltip-hint">Click for details</div>
+            <div className="tooltip-hint">Click to view proposal</div>
           </div>
         );
       })()}
+
+      {/* Corridor Proposal Panel */}
+      {selectedCorridor && (
+        <CorridorProposalPanel
+          corridor={selectedCorridor}
+          onClose={() => {
+            setSelectedCorridor(null);
+            setShowAfterVision(false);
+          }}
+          onShowAfter={setShowAfterVision}
+        />
+      )}
     </div>
   );
 }

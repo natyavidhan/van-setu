@@ -1,4 +1,12 @@
-<<<<<<< HEAD
+---
+title: Vansetu
+emoji: 🌳
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # Urban Green Corridor Platform
 
 A full-stack web application for visualizing and analyzing urban green corridor planning data for Delhi NCT.
@@ -37,24 +45,24 @@ A full-stack web application for visualizing and analyzing urban green corridor 
 
 ### 1. Backend Setup
 
-```bash
+\`\`\`bash
 cd backend
 
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
+# or: venv\\Scripts\\activate  # Windows
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Run server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+\`\`\`
 
 ### 2. Frontend Setup
 
-```bash
+\`\`\`bash
 cd frontend
 
 # Install dependencies
@@ -62,7 +70,7 @@ npm install
 
 # Run dev server
 npm run dev
-```
+\`\`\`
 
 ### 3. Access the Application
 
@@ -74,13 +82,13 @@ npm run dev
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/layers` | GET | List all available layers |
-| `/api/tiles/{layer}/{z}/{x}/{y}.png` | GET | Get map tile |
-| `/api/roads` | GET | Get road network GeoJSON |
-| `/api/corridors` | GET | Get corridor GeoJSON |
-| `/api/stats` | GET | Get all statistics |
-| `/api/stats/{layer}` | GET | Get layer statistics |
-| `/api/point?lat=&lng=` | GET | Query values at point |
+| \`/api/layers\` | GET | List all available layers |
+| \`/api/tiles/{layer}/{z}/{x}/{y}.png\` | GET | Get map tile |
+| \`/api/roads\` | GET | Get road network GeoJSON |
+| \`/api/corridors\` | GET | Get corridor GeoJSON |
+| \`/api/stats\` | GET | Get all statistics |
+| \`/api/stats/{layer}\` | GET | Get layer statistics |
+| \`/api/point?lat=&lng=\` | GET | Query values at point |
 
 ## Features
 
@@ -96,7 +104,7 @@ npm run dev
 |-------|-------------|--------|
 | NDVI | Vegetation Index | Sentinel-2 (10m resolution) |
 | LST | Land Surface Temperature | MODIS (resampled) |
-| GDI | Green Deficit Index | Computed: `0.6×Heat + 0.4×(1-NDVI)` |
+| GDI | Green Deficit Index | Computed: \`0.6×Heat + 0.4×(1-NDVI)\` |
 | Roads | Road Network | OpenStreetMap |
 | Corridors | Priority Corridors | Top 15% GDI on roads |
 
@@ -109,15 +117,3 @@ npm run dev
 ## License
 
 MIT
-=======
----
-title: Vansetu
-emoji: 📉
-colorFrom: green
-colorTo: purple
-sdk: docker
-pinned: false
----
-
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
->>>>>>> 8afd98ad2f725ce7c1b17731937223640542c96c

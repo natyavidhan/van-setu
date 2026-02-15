@@ -35,8 +35,9 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Copy backend code
 COPY --chown=user:user backend/app ./app
-COPY --chown=user:user backend/cache ./cache
-COPY --chown=user:user backend/data ./data
+
+# Create cache and data directories (they may be gitignored)
+RUN mkdir -p cache data/feedback
 
 # Copy raster data files
 COPY --chown=user:user delhi_ndvi_10m.tif ./

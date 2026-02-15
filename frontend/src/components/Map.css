@@ -182,82 +182,354 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Corridor Hover Tooltip */
-.corridor-tooltip {
-  position: fixed;
-  z-index: 2000;
+/* ============================================
+   CORRIDOR SUMMARY PANEL
+   Shows when a corridor is selected on the map
+   ============================================ */
+
+.corridor-summary {
+  position: absolute;
+  top: 20px;
+  left: 20px;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 0;
-  min-width: 200px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  animation: tooltipFadeIn 0.15s ease-out;
-  overflow: hidden;
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 1000;
+  min-width: 260px;
+  max-width: 320px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-@keyframes tooltipFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.tooltip-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.05);
+.corridor-summary h4 {
+  font-size: 14px;
   font-weight: 600;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 12px;
+  color: var(--text-primary);
 }
 
-.risk-badge {
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #000;
+.corridor-summary .close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
 }
 
-.tooltip-content {
-  padding: 10px 12px;
+.corridor-summary .close-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Stats Grid */
+.corridor-stats {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
-.tooltip-row {
+.corridor-stats .stat-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
 }
 
-.tooltip-label {
+.corridor-stats .stat-label {
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.tooltip-value {
+.corridor-stats .stat-value {
   font-size: 13px;
   font-weight: 600;
   font-family: monospace;
 }
 
-.tooltip-hint {
-  padding: 6px 12px;
+.corridor-stats .stat-value.priority {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.corridor-stats .priority-row {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Exposure Breakdown Section */
+.corridor-details h5 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.exposure-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exposure-bar {
+  display: grid;
+  grid-template-columns: 60px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.exposure-bar .bar-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.exposure-bar .bar-track {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.exposure-bar .bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.exposure-bar .bar-fill.heat {
+  background: linear-gradient(90deg, #fc8d59, #d73027);
+}
+
+.exposure-bar .bar-fill.green {
+  background: linear-gradient(90deg, #238b45, #91cf60);
+}
+
+.exposure-bar .bar-fill.aqi {
+  background: linear-gradient(90deg, #7b3294, #c2a5cf);
+}
+
+.exposure-bar .bar-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: right;
+  font-family: monospace;
+}
+
+/* Note at bottom */
+.corridor-note {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.corridor-note small {
   font-size: 10px;
   color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+/* ============================================
+   LEAFLET POPUP OVERRIDES FOR CORRIDORS
+   ============================================ */
+
+.corridor-popup {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.corridor-popup hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.point-popup {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ============================================
+   CORRIDOR HOVER TOOLTIP STYLES
+   Rich tooltip shown on corridor hover
+   ============================================ */
+
+.corridor-tooltip-container {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.corridor-tooltip-container .leaflet-tooltip-content {
+  margin: 0;
+}
+
+.corridor-tooltip {
+  background: rgba(26, 26, 36, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 200px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Tooltip Header */
+.corridor-tooltip .tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.corridor-tooltip .tooltip-icon {
+  font-size: 16px;
+}
+
+.corridor-tooltip .tooltip-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.corridor-tooltip .tooltip-priority {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Stats Row */
+.corridor-tooltip .tooltip-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.corridor-tooltip .tooltip-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  padding: 6px 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.corridor-tooltip .tooltip-stat .stat-icon {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.corridor-tooltip .tooltip-stat .stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  font-family: monospace;
+}
+
+.corridor-tooltip .tooltip-stat .stat-label {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Dominant Exposure */
+.corridor-tooltip .tooltip-exposure {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.corridor-tooltip .tooltip-exposure .exposure-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.corridor-tooltip .tooltip-exposure .exposure-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Exposure Bars in Tooltip */
+.corridor-tooltip .tooltip-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.corridor-tooltip .tooltip-bar {
+  display: grid;
+  grid-template-columns: 20px 1fr 32px;
+  align-items: center;
+  gap: 6px;
+}
+
+.corridor-tooltip .tooltip-bar .bar-icon {
+  font-size: 11px;
   text-align: center;
-  background: rgba(255, 255, 255, 0.03);
-  border-top: 1px solid var(--border-color);
+}
+
+.corridor-tooltip .tooltip-bar .bar-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.corridor-tooltip .tooltip-bar .bar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.corridor-tooltip .tooltip-bar .bar-fill.heat {
+  background: linear-gradient(90deg, #fc8d59, #d73027);
+}
+
+.corridor-tooltip .tooltip-bar .bar-fill.green {
+  background: linear-gradient(90deg, #238b45, #91cf60);
+}
+
+.corridor-tooltip .tooltip-bar .bar-fill.aqi {
+  background: linear-gradient(90deg, #7b3294, #c2a5cf);
+}
+
+.corridor-tooltip .tooltip-bar .bar-pct {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: right;
+  font-family: monospace;
+}
+
+/* Hint at bottom */
+.corridor-tooltip .tooltip-hint {
+  text-align: center;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.4);
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }

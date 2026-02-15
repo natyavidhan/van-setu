@@ -59,11 +59,10 @@ def create_app() -> FastAPI:
     # CORS middleware for frontend access
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "*"],
+        allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["*"],
     )
     
     # Import routers here to avoid circular imports
@@ -75,7 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(roads.router, prefix=settings.api_prefix, tags=["Roads"])
     app.include_router(stats.router, prefix=settings.api_prefix, tags=["Statistics"])
     app.include_router(aqi.router, prefix=settings.api_prefix, tags=["Air Quality"])
-    app.include_router(corridors.router, prefix=settings.api_prefix, tags=["Corridors"])
+    app.include_router(corridors.router, prefix=settings.api_prefix, tags=["Corridor Aggregation"])
     
     @app.get("/", tags=["Health"])
     async def root():

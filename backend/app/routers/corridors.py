@@ -1,600 +1,287 @@
 """
-Corridors Router — Continuous green corridor endpoints.
+Corridors Router — Point-Based Corridor Aggregation Endpoints
 
-Aggregates connected road segments into planning-actionable corridors.
-Includes intervention suggestions and community feedback.
+This router provides READ-ONLY endpoints for the corridor aggregation feature.
+It does NOT modify existing endpoints or point data.
+
+ENDPOINTS:
+- GET /corridors/aggregated - Get all aggregated corridors
+- GET /corridors/aggregated/{id} - Get specific corridor with point details
+- GET /corridors/points - Get high-priority points used for aggregation
+
+DESIGN NOTES:
+- Corridors are derived from existing high-priority points
+- Points are preserved - corridors reference them, not replace them
+- D_max and N_min are configurable via query parameters
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
-import json
-import asyncio
+from typing import Dict, Any, Optional
 
-from app.dependencies import get_raster_service, get_road_service, get_aqi_service, get_corridor_service
+from app.dependencies import (
+    get_raster_service, 
+    get_road_service, 
+    get_aqi_service,
+    get_corridor_service
+)
 from app.services.raster_service import RasterService
 from app.services.road_service import RoadService
 from app.services.aqi_service import AQIService
 from app.services.corridor_service import CorridorService
-from app.services.intervention_service import get_intervention_service
-from app.services.feedback_service import get_feedback_service
 
 router = APIRouter()
 
 
-# =============================================================================
-# REQUEST MODELS
-# =============================================================================
-
-class FeedbackRequest(BaseModel):
-    """User feedback submission."""
-    comment: str
-
-class VoteRequest(BaseModel):
-    """Vote submission."""
-    upvote: bool = True
-
-
-@router.get("/priority-corridors")
-async def get_corridors(
-    priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0, description="Min priority score for corridor eligibility"),
-    min_length: float = Query(default=200.0, ge=0.0, description="Minimum corridor length in meters"),
-    include_aqi: bool = Query(default=True, description="Use Multi-Exposure Priority scoring"),
+@router.get("/corridors/aggregated")
+async def get_aggregated_corridors(
+    d_max: float = Query(
+        default=30.0, 
+        description="Maximum connection distance in meters. Two points are connected if distance ≤ D_max. Default 30m matches street-scale continuity.",
+        ge=5.0,
+        le=200.0
+    ),
+    n_min: int = Query(
+        default=5, 
+        description="Minimum number of points to form a valid corridor. Smaller groups remain as individual points.",
+        ge=2,
+        le=50
+    ),
+    percentile: float = Query(
+        default=85, 
+        description="Percentile threshold for high-priority points (default 85 = top 15%)",
+        ge=50,
+        le=99
+    ),
     corridor_service: CorridorService = Depends(get_corridor_service),
     road_service: RoadService = Depends(get_road_service),
     raster_service: RasterService = Depends(get_raster_service),
     aqi_service: AQIService = Depends(get_aqi_service)
 ) -> Dict[str, Any]:
     """
-    Get continuous green corridors aggregated from road segments.
+    Get aggregated high-exposure corridors as GeoJSON.
     
-    A corridor is a connected chain of adjacent high-priority road segments.
+    This endpoint implements POINT-BASED CORRIDOR AGGREGATION:
+    1. Takes existing high-priority road segments
+    2. Converts them to points (segment centroids)
+    3. Connects spatially continuous points into corridors
+    4. Returns corridors with derived metadata
     
-    Algorithm:
-        1. Filter segments with priority_score >= priority_threshold
-        2. Build connectivity graph (segments touching/within 10m)
-        3. Find connected components using DFS
-        4. Aggregate each component into a corridor
-        5. Filter out corridors shorter than min_length
-        6. Return ranked by mean_priority
+    KEY PRINCIPLES:
+    - Points are NEVER deleted or merged
+    - Corridors reference points, not replace them
+    - Each point belongs to at most one corridor
+    - Results are deterministic and reproducible
+    
+    CORRIDOR DEFINITION:
+    A corridor is a connected chain of nearby high-priority points
+    representing a continuous path of human exposure.
     
     Args:
-        priority_threshold: Min priority score for segments (0-1, default 0.70)
-        min_length: Min corridor length in meters (default 200)
-        include_aqi: Use Multi-Exposure Priority (default true)
-    
-    Returns GeoJSON FeatureCollection with corridor geometries and metrics:
-        - corridor_id: UUID
-        - length_m: Total length in meters
-        - segment_count: Number of aggregated segments
-        - mean_priority: Average priority score
-        - mean_heat, mean_ndvi, mean_aqi: Component averages (if available)
-        - created_at: Timestamp
+        d_max: Maximum connection distance in meters (default: 30m)
+        n_min: Minimum points for valid corridor (default: 5)
+        percentile: Percentile threshold for high-priority points
+        
+    Returns:
+        GeoJSON FeatureCollection with corridor geometries and metadata
     """
     try:
-        # Get segments with priority scores
-        if include_aqi:
-            segments = road_service.sample_with_aqi(raster_service, aqi_service)
-            scoring_method = "multi-exposure"
-        else:
-            segments = road_service.sample_gdi_along_roads(raster_service)
-            scoring_method = "gdi"
-        
-        if segments is None or len(segments) == 0:
-            return {
-                "type": "FeatureCollection",
-                "features": [],
-                "metadata": {
-                    "count": 0,
-                    "message": "No road segments available"
-                }
-            }
+        # Get road segments with multi-exposure priority
+        roads = road_service.sample_with_aqi(raster_service, aqi_service)
+        road_geojson = road_service.roads_to_geojson(roads)
         
         # Aggregate into corridors
-        corridor_service.priority_threshold = priority_threshold
-        corridor_service.min_length = min_length
-        
-        metrics, corridors_gdf = corridor_service.aggregate_corridors(segments, force_refresh=True)
+        result = corridor_service.get_corridors_from_road_segments(
+            road_geojson,
+            d_max_meters=d_max,
+            n_min=n_min,
+            percentile_threshold=percentile
+        )
         
         # Convert to GeoJSON
-        geojson = corridor_service.corridors_to_geojson(corridors_gdf, metrics)
-        
-        # Sort by mean_priority (descending)
-        features = sorted(
-            geojson.get("features", []),
-            key=lambda f: f.get("properties", {}).get("mean_priority", 0),
-            reverse=True
-        )
+        corridors_geojson = corridor_service.corridors_to_geojson(result['corridors'])
         
         return {
             "type": "FeatureCollection",
-            "features": features,
+            "features": corridors_geojson.get("features", []),
             "metadata": {
-                "count": len(features),
-                "priority_threshold": priority_threshold,
-                "min_length_m": min_length,
-                "scoring_method": scoring_method,
-                "description": f"{len(features)} corridors aggregated from high-priority segments"
+                **result['metadata'],
+                "description": "Point-based corridor aggregation - spatially continuous high-exposure paths",
+                "algorithm": "Distance-based connectivity with connected component extraction",
+                "note": "Corridors reference points, they do not replace them"
             }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/priority-corridors/stream")
-async def stream_corridors(
-    priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0),
-    min_length: float = Query(default=200.0, ge=0.0),
-    include_aqi: bool = Query(default=True),
-    corridor_service: CorridorService = Depends(get_corridor_service),
-    road_service: RoadService = Depends(get_road_service),
-    raster_service: RasterService = Depends(get_raster_service),
-    aqi_service: AQIService = Depends(get_aqi_service)
-):
-    """
-    Stream corridors one-by-one using Server-Sent Events (SSE).
-    
-    Frontend receives corridors progressively as they're computed,
-    avoiding the "loading" feel of waiting for all at once.
-    
-    Event types:
-        - 'status': Progress updates (e.g., "Loading roads...", "Computing priorities...")
-        - 'corridor': Individual corridor GeoJSON feature
-        - 'complete': Final summary with total count
-    """
-    async def generate_corridors():
-        try:
-            # Status: Loading roads
-            yield f"event: status\ndata: {json.dumps({'message': 'Loading road network...'})}\n\n"
-            await asyncio.sleep(0)  # Allow event loop to send
-            
-            # Get segments with priority scores
-            if include_aqi:
-                segments = road_service.sample_with_aqi(raster_service, aqi_service)
-                scoring_method = "multi-exposure"
-            else:
-                segments = road_service.sample_gdi_along_roads(raster_service)
-                scoring_method = "gdi"
-            
-            if segments is None or len(segments) == 0:
-                yield f"event: complete\ndata: {json.dumps({'count': 0, 'message': 'No road segments available'})}\n\n"
-                return
-            
-            # Status: Computing corridors
-            yield f"event: status\ndata: {json.dumps({'message': f'Aggregating {len(segments)} road segments...'})}\n\n"
-            await asyncio.sleep(0)
-            
-            # Aggregate into corridors
-            corridor_service.priority_threshold = priority_threshold
-            corridor_service.min_length = min_length
-            
-            metrics, corridors_gdf = corridor_service.aggregate_corridors(segments, force_refresh=True)
-            
-            # Convert and stream each corridor
-            geojson = corridor_service.corridors_to_geojson(corridors_gdf, metrics)
-            features = sorted(
-                geojson.get("features", []),
-                key=lambda f: f.get("properties", {}).get("mean_priority", 0),
-                reverse=True
-            )
-            
-            # Stream corridors one-by-one
-            for i, feature in enumerate(features):
-                yield f"event: corridor\ndata: {json.dumps(feature)}\n\n"
-                await asyncio.sleep(0.05)  # Small delay for visual effect
-            
-            # Complete
-            yield f"event: complete\ndata: {json.dumps({'count': len(features), 'scoring_method': scoring_method})}\n\n"
-            
-        except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-    
-    return StreamingResponse(
-        generate_corridors(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
-        }
-    )
-
-
-@router.get("/priority-corridors/{corridor_id}")
+@router.get("/corridors/aggregated/{corridor_id}")
 async def get_corridor_detail(
     corridor_id: str,
-    priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0),
-    min_length: float = Query(default=200.0, ge=0.0),
-    include_aqi: bool = Query(default=True),
-    corridor_service: CorridorService = Depends(get_corridor_service),
-    road_service: RoadService = Depends(get_road_service),
-    raster_service: RasterService = Depends(get_raster_service),
-    aqi_service: AQIService = Depends(get_aqi_service)
+    include_points: bool = Query(
+        default=True,
+        description="Include full point details in response"
+    ),
+    corridor_service: CorridorService = Depends(get_corridor_service)
 ) -> Dict[str, Any]:
     """
     Get detailed information about a specific corridor.
     
-    Includes:
-        - Full geometry (MultiLineString or LineString)
-        - All metrics (priority, length, AQI, heat, NDVI)
-        - List of segment IDs that compose the corridor
-        - Bounds (bbox)
+    Returns:
+        - Full corridor metadata
+        - List of point IDs
+        - Optionally, full point details
     """
     try:
-        # Get segments
-        if include_aqi:
-            segments = road_service.sample_with_aqi(raster_service, aqi_service)
-        else:
-            segments = road_service.sample_gdi_along_roads(raster_service)
+        corridor = corridor_service.get_corridor_by_id(corridor_id)
         
-        if segments is None or len(segments) == 0:
-            raise HTTPException(status_code=404, detail="No road segments available")
+        if corridor is None:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Corridor {corridor_id} not found. Make sure to call /corridors/aggregated first."
+            )
         
-        # Aggregate corridors
-        corridor_service.priority_threshold = priority_threshold
-        corridor_service.min_length = min_length
-        
-        metrics, corridors_gdf = corridor_service.aggregate_corridors(segments, force_refresh=True)
-        
-        # Find the requested corridor
-        target_metrics = next((m for m in metrics if m.corridor_id == corridor_id), None)
-        
-        if target_metrics is None:
-            raise HTTPException(status_code=404, detail=f"Corridor {corridor_id} not found")
-        
-        # Get corresponding geometry
-        target_row = corridors_gdf[corridors_gdf['corridor_id'] == corridor_id]
-        if target_row.empty:
-            raise HTTPException(status_code=404, detail=f"Corridor geometry not found")
-        
-        geom = target_row.iloc[0].geometry
-        bounds = geom.bounds  # (minx, miny, maxx, maxy)
-        
-        return {
-            "type": "Feature",
-            "geometry": {
-                "type": "MultiLineString" if geom.geom_type == "MultiLineString" else "LineString",
-                "coordinates": list(geom.coords) if geom.geom_type == "LineString" else [list(line.coords) for line in geom.geoms]
-            },
-            "properties": {
-                "corridor_id": target_metrics.corridor_id,
-                "length_m": target_metrics.length_m,
-                "segment_count": target_metrics.segment_count,
-                "segment_ids": target_metrics.segment_ids,
-                "mean_priority": target_metrics.mean_priority,
-                "mean_heat": target_metrics.mean_heat,
-                "mean_ndvi": target_metrics.mean_ndvi,
-                "mean_aqi": target_metrics.mean_aqi,
-                "bounds": {
-                    "west": bounds[0],
-                    "south": bounds[1],
-                    "east": bounds[2],
-                    "north": bounds[3]
-                },
-                "created_at": target_metrics.created_at
+        response = {
+            "corridor": corridor,
+            "geometry": corridor['geometry'],
+            "summary": {
+                "num_points": corridor['num_points'],
+                "mean_priority": corridor.get('mean_priority'),
+                "dominant_exposure": corridor.get('dominant_exposure'),
+                "corridor_length_m": corridor.get('corridor_length_m')
             }
         }
+        
+        if include_points:
+            points = corridor_service.get_points_for_corridor(corridor_id)
+            response["points"] = points
+            response["points_geojson"] = corridor_service.points_to_geojson(points)
+        
+        return response
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/priority-corridors/stats/summary")
-async def get_corridors_summary(
-    priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0),
-    min_length: float = Query(default=200.0, ge=0.0),
-    include_aqi: bool = Query(default=True),
+@router.get("/corridors/points")
+async def get_corridor_points(
+    percentile: float = Query(
+        default=85, 
+        description="Percentile threshold for high-priority points"
+    ),
+    include_all: bool = Query(
+        default=False,
+        description="Include all points, not just high-priority ones"
+    ),
     corridor_service: CorridorService = Depends(get_corridor_service),
     road_service: RoadService = Depends(get_road_service),
     raster_service: RasterService = Depends(get_raster_service),
     aqi_service: AQIService = Depends(get_aqi_service)
 ) -> Dict[str, Any]:
     """
-    Get summary statistics about all corridors.
+    Get high-priority points used for corridor aggregation as GeoJSON.
     
-    Returns aggregated metrics useful for dashboards.
-    """
-    try:
-        # Get segments
-        if include_aqi:
-            segments = road_service.sample_with_aqi(raster_service, aqi_service)
-        else:
-            segments = road_service.sample_gdi_along_roads(raster_service)
-        
-        if segments is None or len(segments) == 0:
-            return {
-                "corridor_count": 0,
-                "total_length_m": 0,
-                "total_segments": 0,
-                "avg_priority": None
-            }
-        
-        # Aggregate corridors
-        corridor_service.priority_threshold = priority_threshold
-        corridor_service.min_length = min_length
-        
-        metrics, corridors_gdf = corridor_service.aggregate_corridors(segments, force_refresh=True)
-        
-        if len(metrics) == 0:
-            return {
-                "corridor_count": 0,
-                "total_length_m": 0,
-                "total_segments": 0,
-                "avg_priority": None
-            }
-        
-        total_length = sum(m.length_m for m in metrics)
-        total_segments = sum(m.segment_count for m in metrics)
-        avg_priority = sum(m.mean_priority for m in metrics) / len(metrics)
-        
-        # Top corridors
-        top_5 = sorted(metrics, key=lambda m: m.mean_priority, reverse=True)[:5]
-        
-        return {
-            "corridor_count": len(metrics),
-            "total_length_m": float(total_length),
-            "total_segments": total_segments,
-            "avg_priority": float(avg_priority),
-            "min_priority": float(min(m.mean_priority for m in metrics)),
-            "max_priority": float(max(m.mean_priority for m in metrics)),
-            "top_corridors": [
-                {
-                    "corridor_id": m.corridor_id,
-                    "length_m": m.length_m,
-                    "mean_priority": m.mean_priority,
-                    "segment_count": m.segment_count
-                }
-                for m in top_5
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# =============================================================================
-# PROPOSAL ENDPOINTS
-# =============================================================================
-
-@router.get("/priority-corridors/{corridor_id}/proposal")
-async def get_corridor_proposal(
-    corridor_id: str,
-    priority_threshold: float = Query(default=0.70, ge=0.0, le=1.0),
-    min_length: float = Query(default=200.0, ge=0.0),
-    include_aqi: bool = Query(default=True),
-    corridor_service: CorridorService = Depends(get_corridor_service),
-    road_service: RoadService = Depends(get_road_service),
-    raster_service: RasterService = Depends(get_raster_service),
-    aqi_service: AQIService = Depends(get_aqi_service)
-) -> Dict[str, Any]:
-    """
-    Get intervention proposal for a specific corridor.
+    These are the INPUT points to the corridor aggregation algorithm.
+    Each point represents the centroid of a high-priority road segment.
     
+    WHY POINTS ARE PRESERVED:
+    - Original point data is ground truth
+    - Corridors are an abstraction layer on top
+    - Points may belong to corridors or remain isolated
+    - No point is ever deleted or modified
+    
+    Args:
+        percentile: Percentile threshold for high-priority points
+        include_all: If true, include all points (not just high-priority)
+        
     Returns:
-        - corridor_type: Classification based on dominant exposure
-        - suggested_interventions: Context-appropriate intervention list
-        - exposure_breakdown: Heat, pollution, and green deficit scores
-    
-    Uses rule-based classification (no ML):
-        - Heat dominant → "Heat Mitigation"
-        - Pollution dominant → "Air Quality Buffer"
-        - Green deficit dominant → "Green Connectivity"
-        - Mixed → "Multi-Benefit"
+        GeoJSON FeatureCollection with point geometries
     """
     try:
-        # Get segments with priority scores
-        if include_aqi:
-            segments = road_service.sample_with_aqi(raster_service, aqi_service)
-        else:
-            segments = road_service.sample_gdi_along_roads(raster_service)
+        # Get road segments with multi-exposure priority
+        roads = road_service.sample_with_aqi(raster_service, aqi_service)
+        road_geojson = road_service.roads_to_geojson(roads)
         
-        if segments is None or len(segments) == 0:
-            raise HTTPException(status_code=404, detail="No road segments available")
-        
-        # Aggregate corridors
-        corridor_service.priority_threshold = priority_threshold
-        corridor_service.min_length = min_length
-        
-        metrics, corridors_gdf = corridor_service.aggregate_corridors(segments, force_refresh=True)
-        
-        # Find the requested corridor
-        target_metrics = next((m for m in metrics if m.corridor_id == corridor_id), None)
-        
-        if target_metrics is None:
-            raise HTTPException(status_code=404, detail=f"Corridor {corridor_id} not found")
-        
-        # Get exposure scores
-        # mean_heat is already normalized (0-1), higher = hotter
-        # mean_ndvi needs inversion: low NDVI = high green deficit
-        # mean_aqi is PM2.5 in μg/m³, normalize to 0-1 (assume 0-300 range)
-        
-        heat_score = target_metrics.mean_heat if target_metrics.mean_heat is not None else 0.5
-        
-        # Green deficit = 1 - normalized NDVI (inverted)
-        ndvi_norm = target_metrics.mean_ndvi if target_metrics.mean_ndvi is not None else 0.5
-        green_deficit_score = 1.0 - ndvi_norm
-        
-        # Normalize AQI (PM2.5): 0 = good, 300+ = hazardous
-        aqi_raw = target_metrics.mean_aqi if target_metrics.mean_aqi is not None else 50
-        pollution_score = min(1.0, aqi_raw / 300.0)
-        
-        # Generate proposal
-        intervention_service = get_intervention_service()
-        proposal = intervention_service.generate_proposal(
-            corridor_id=corridor_id,
-            heat_score=heat_score,
-            pollution_score=pollution_score,
-            green_deficit_score=green_deficit_score
+        # Get points from corridor service (this also caches them)
+        result = corridor_service.get_corridors_from_road_segments(
+            road_geojson,
+            percentile_threshold=percentile
         )
         
-        # Include corridor metrics in response
-        result = intervention_service.proposal_to_dict(proposal)
-        result["corridor_metrics"] = {
-            "length_m": target_metrics.length_m,
-            "segment_count": target_metrics.segment_count,
-            "mean_priority": target_metrics.mean_priority
-        }
+        # Choose which points to return
+        if include_all:
+            points = result.get('all_points', [])
+        else:
+            points = result.get('points', [])
         
-        return result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# =============================================================================
-# COMMUNITY FEEDBACK ENDPOINTS
-# =============================================================================
-
-@router.post("/priority-corridors/{corridor_id}/feedback")
-async def add_corridor_feedback(
-    corridor_id: str,
-    request: FeedbackRequest
-) -> Dict[str, Any]:
-    """
-    Submit feedback for a corridor.
-    
-    No authentication required (MVP).
-    
-    Args:
-        corridor_id: Target corridor
-        comment: User feedback text
-    
-    Returns:
-        Created feedback object
-    """
-    try:
-        feedback_service = get_feedback_service()
-        feedback = feedback_service.add_feedback(corridor_id, request.comment)
+        # Convert to GeoJSON
+        points_geojson = corridor_service.points_to_geojson(points)
         
         return {
-            "success": True,
-            "feedback": {
-                "id": feedback.id,
-                "corridor_id": feedback.corridor_id,
-                "comment": feedback.comment,
-                "timestamp": feedback.timestamp,
-                "votes": feedback.votes
+            "type": "FeatureCollection",
+            "features": points_geojson.get("features", []),
+            "metadata": {
+                "total_points": len(points),
+                "percentile_threshold": percentile,
+                "include_all": include_all,
+                "description": "High-priority points derived from road segment centroids"
             }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/priority-corridors/{corridor_id}/feedback")
-async def get_corridor_feedback(
-    corridor_id: str,
-    limit: int = Query(default=10, ge=1, le=50)
+@router.get("/corridors/stats")
+async def get_corridor_stats(
+    corridor_service: CorridorService = Depends(get_corridor_service)
 ) -> Dict[str, Any]:
     """
-    Get feedback for a corridor.
+    Get statistics about the current corridor aggregation.
     
-    Returns feedback sorted by votes (highest first).
+    Returns summary statistics without full geometry data.
     """
     try:
-        feedback_service = get_feedback_service()
-        feedback_list = feedback_service.get_feedback(corridor_id, sort_by_votes=True, limit=limit)
+        if corridor_service._corridors_cache is None:
+            return {
+                "status": "no_data",
+                "message": "No corridors computed yet. Call /corridors/aggregated first."
+            }
+        
+        corridors = corridor_service._corridors_cache
+        
+        # Compute statistics
+        priorities = [c['mean_priority'] for c in corridors if c.get('mean_priority')]
+        lengths = [c['corridor_length_m'] for c in corridors if c.get('corridor_length_m')]
+        point_counts = [c['num_points'] for c in corridors]
+        
+        # Exposure type distribution
+        exposure_counts = {}
+        for c in corridors:
+            exp = c.get('dominant_exposure', 'unknown')
+            exposure_counts[exp] = exposure_counts.get(exp, 0) + 1
         
         return {
-            "corridor_id": corridor_id,
-            "feedback": [
-                {
-                    "id": f.id,
-                    "comment": f.comment,
-                    "timestamp": f.timestamp,
-                    "votes": f.votes
+            "status": "computed",
+            "total_corridors": len(corridors),
+            "statistics": {
+                "priority": {
+                    "mean": float(sum(priorities) / len(priorities)) if priorities else None,
+                    "min": float(min(priorities)) if priorities else None,
+                    "max": float(max(priorities)) if priorities else None
+                },
+                "length_m": {
+                    "mean": float(sum(lengths) / len(lengths)) if lengths else None,
+                    "min": float(min(lengths)) if lengths else None,
+                    "max": float(max(lengths)) if lengths else None,
+                    "total": float(sum(lengths)) if lengths else None
+                },
+                "points_per_corridor": {
+                    "mean": float(sum(point_counts) / len(point_counts)) if point_counts else None,
+                    "min": min(point_counts) if point_counts else None,
+                    "max": max(point_counts) if point_counts else None,
+                    "total": sum(point_counts)
                 }
-                for f in feedback_list
-            ],
-            "count": len(feedback_list)
+            },
+            "exposure_distribution": exposure_counts
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/priority-corridors/{corridor_id}/vote")
-async def vote_on_corridor(
-    corridor_id: str,
-    request: VoteRequest
-) -> Dict[str, Any]:
-    """
-    Vote on a corridor (community support indicator).
-    
-    Args:
-        corridor_id: Target corridor
-        upvote: True for 👍, False for 👎
-    
-    Returns:
-        Updated vote counts
-    """
-    try:
-        feedback_service = get_feedback_service()
-        votes = feedback_service.vote_corridor(corridor_id, request.upvote)
-        
-        return {
-            "success": True,
-            "corridor_id": corridor_id,
-            "votes": {
-                "upvotes": votes.upvotes,
-                "downvotes": votes.downvotes,
-                "net": votes.net_votes,
-                "support_level": votes.support_level
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/feedback/{feedback_id}/vote")
-async def vote_on_feedback(
-    feedback_id: str,
-    request: VoteRequest
-) -> Dict[str, Any]:
-    """
-    Vote on a specific feedback comment.
-    
-    Args:
-        feedback_id: Target feedback ID
-        upvote: True for 👍, False for 👎
-    
-    Returns:
-        Updated feedback with new vote count
-    """
-    try:
-        feedback_service = get_feedback_service()
-        feedback = feedback_service.vote_on_feedback(feedback_id, request.upvote)
-        
-        if feedback is None:
-            raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} not found")
-        
-        return {
-            "success": True,
-            "feedback": {
-                "id": feedback.id,
-                "comment": feedback.comment,
-                "votes": feedback.votes
-            }
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/priority-corridors/{corridor_id}/community")
-async def get_corridor_community_data(
-    corridor_id: str,
-    feedback_limit: int = Query(default=5, ge=1, le=20)
-) -> Dict[str, Any]:
-    """
-    Get all community data for a corridor.
-    
-    Returns votes and top feedback in a single response.
-    """
-    try:
-        feedback_service = get_feedback_service()
-        return feedback_service.get_community_data(corridor_id, feedback_limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -36,7 +36,7 @@ def init_services():
     print("\n📡 Initializing AQI data...")
     _aqi_service.fetch_stations()
     
-    # Initialize corridor service (depends on road service)
+    # Initialize corridor service for point-based aggregation
     _corridor_service = CorridorService(settings)
     print("🔗 Corridor aggregation service initialized")
 
@@ -80,7 +80,7 @@ def get_aqi_service() -> AQIService:
 
 
 def get_corridor_service() -> CorridorService:
-    """Dependency to get corridor service."""
+    """Dependency to get corridor aggregation service."""
     if _corridor_service is None:
         raise RuntimeError("Corridor service not initialized")
     return _corridor_service

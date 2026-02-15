@@ -143,10 +143,16 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 color="#666"
               />
               <Toggle
-                label="Priority Corridors"
+                label="Green Corridors"
                 checked={activeLayers.corridors}
                 onChange={() => toggleLayer('corridors')}
                 color="#fc8d59"
+              />
+              <Toggle
+                label="High-Exposure Corridors"
+                checked={activeLayers.aggregatedCorridors}
+                onChange={() => toggleLayer('aggregatedCorridors')}
+                color="#d73027"
               />
               <Toggle
                 label="AQI Stations"

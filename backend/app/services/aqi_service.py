@@ -66,6 +66,7 @@ WAQI_TOKEN = "demo"  # Demo token works for basic requests
 # OpenAQ API configuration (v3 - requires API key)
 OPENAQ_BASE_URL = "https://api.openaq.org/v3"
 OPENAQ_LOCATIONS_ENDPOINT = "/locations"
+OPENAQ_API_KEY = "52874ea85b8806116b31cfacf037253ddf816dba988ed0716b7d0ff11943462e"
 
 # Delhi bounding box for station filtering
 DELHI_BBOX = {
@@ -251,7 +252,6 @@ class AQIService:
         self.settings = settings
         self._cache = AQIStationCache()
         self._lock = threading.Lock()
-        self._openaq_api_key = settings.openaq_api_key
     
     @property
     def stations(self) -> List[AQIStation]:
@@ -376,7 +376,7 @@ class AQIService:
         url = f"{OPENAQ_BASE_URL}{OPENAQ_LOCATIONS_ENDPOINT}"
         headers = {
             "Accept": "application/json",
-            "X-API-Key": self._openaq_api_key
+            "X-API-Key": OPENAQ_API_KEY
         }
         
         if HAS_HTTPX:

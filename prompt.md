@@ -1,297 +1,329 @@
-# 🧠 MASTER IMPLEMENTATION PROMPT
+# 🧠 MASTER IMPLEMENTATION PROMPT — **POINT-BASED CORRIDOR AGGREGATION**
 
-## PHASE: INTERVENTION SUGGESTION + VISUALIZATION + COMMUNITY INPUT
-
-> **IMPORTANT**
-> You are extending an existing FastAPI + React (Vite) application.
->
-> The app already has:
->
-> * Multi-exposure priority (NDVI + LST + AQI)
-> * Corridor geometries
-> * Corridor visualization on a Leaflet map
->
-> ❌ Do NOT refactor core analytics
-> ❌ Do NOT change corridor detection logic
->
-> Your job is to **translate corridors into understandable, community-oriented proposals**.
+> **IMPORTANT:**
+> This is an extension of an existing system.
+> Do **not** recompute priority, exposure, AQI, NDVI, or LST.
+> Treat existing high-priority points as **ground truth**.
 
 ---
 
-## ROLE
+## ROLE & EXPECTATION
 
-You are a **full-stack geospatial product engineer** building a **collaborative urban planning prototype**.
+You are a **senior geospatial engineer** extending an existing FastAPI + React (Vite) application.
 
-Your goal is to make corridors:
+Your task is to create a **corridor aggregation feature** that:
 
-* Understandable
-* Actionable
-* Open to public input
+* Takes **existing high-priority points** as input
+* Connects **spatially continuous points** into **corridors**
+* Preserves **all original points**
+* Adds a **new corridor abstraction layer** on top
+
+This phase is **pure geometry + topology**, not analytics.
 
 ---
 
-## HIGH-LEVEL OBJECTIVE
+## CURRENT SYSTEM (ASSUME THIS EXISTS)
+
+### Backend
+
+* FastAPI
+* MongoDB
+* A collection of **high-priority points**, each with:
+
+  * Geometry (Point)
+  * Priority score
+  * AQI / heat / NDVI metadata
+* API already returns these points
+
+### Frontend
+
+* React (Vite)
+* Map UI showing:
+
+  * Individual high-priority points
+  * Color-coded by priority
+* Points render correctly and are trusted
+
+---
+
+## OBJECTIVE OF THIS PHASE
 
 Upgrade the system from:
 
-> “These are priority corridors”
+> “These are isolated high-priority locations”
 
 to:
 
-> **“Here is what could be done on this corridor, what it might look like, and what people think.”**
+> **“These points form continuous exposure corridors.”**
 
-This must directly satisfy the **Minimum Requirements**.
+A **corridor** is defined as:
+
+* A connected chain of nearby high-priority points
+* Representing a continuous path of human exposure
+* Derived *without losing or modifying point-level data*
 
 ---
 
-## PART 1 — INTERVENTION SUGGESTION ENGINE (BACKEND)
+## CORE DESIGN PRINCIPLES (MANDATORY)
 
-### 1️⃣ Define corridor exposure profile
+* ❌ Do NOT delete points
+* ❌ Do NOT merge points
+* ❌ Do NOT change priority scores
+* ✅ Corridors reference points, not replace them
+* ✅ Points may belong to **only one corridor**
+* ✅ Corridors are deterministic and reproducible
 
-For each corridor, compute and store:
+---
+
+## BACKEND TASKS (STEP BY STEP)
+
+---
+
+### 1️⃣ INPUT: EXISTING HIGH-PRIORITY POINTS
+
+Use the existing collection:
 
 ```json
 {
-  "heat_score": 0.78,
-  "pollution_score": 0.65,
-  "green_deficit_score": 0.42
+  "point_id": "...",
+  "geometry": { "type": "Point", "coordinates": [...] },
+  "priority_score": 0.87,
+  "aqi": 0.74,
+  "heat": 0.81,
+  "ndvi": 0.19
 }
 ```
 
-These already exist implicitly — just expose them cleanly.
+No filtering or recomputation allowed in this phase.
 
 ---
 
-### 2️⃣ Corridor type classification (RULE-BASED)
+### 2️⃣ DEFINE CONNECTIVITY RULE (VERY IMPORTANT)
 
-Implement **simple, deterministic rules**:
+Two points **A** and **B** are considered connected if:
 
-```text
-IF heat_score is dominant
-→ corridor_type = "Heat Mitigation"
+* Distance(A, B) ≤ `D_max`
 
-IF pollution_score is dominant
-→ corridor_type = "Air Quality Buffer"
+Recommended default:
 
-IF green_deficit_score is dominant
-→ corridor_type = "Green Connectivity"
-
-IF mixed
-→ corridor_type = "Multi-Benefit"
+```
+D_max = 30 meters
 ```
 
-⚠️ No ML. No tuning. No black box.
+Justification:
+
+* Matches street-scale continuity
+* Avoids jumping across blocks
+* Supported by walkability & exposure literature
+
+Make `D_max` configurable.
 
 ---
 
-### 3️⃣ Map corridor type → suggested interventions
+### 3️⃣ BUILD POINT CONNECTIVITY GRAPH
 
-Create a **static intervention lookup table**:
+Algorithm:
 
-```json
-{
-  "Heat Mitigation": [
-    "Continuous street tree canopy",
-    "Shaded pedestrian walkways",
-    "High-albedo or permeable paving"
-  ],
-  "Air Quality Buffer": [
-    "Dense roadside vegetation buffers",
-    "Green screens or hedges",
-    "Setback planting near traffic lanes"
-  ],
-  "Green Connectivity": [
-    "Tree-lined walking corridors",
-    "Cycle-friendly green streets",
-    "Pocket greens at intersections"
-  ],
-  "Multi-Benefit": [
-    "Mixed tree canopy and shaded paths",
-    "Cycle + pedestrian green corridors"
-  ]
-}
-```
+* Treat each point as a node
+* Add an edge between nodes if:
+
+  * Distance ≤ D_max
+* Use:
+
+  * KD-tree / BallTree
+  * OR spatial index (Shapely STRtree)
+
+⚠️ This graph includes **only existing points**.
+
+---
+
+### 4️⃣ EXTRACT CONNECTED COMPONENTS → CORRIDORS
+
+* Find **connected components** in the graph
+* Each connected component = **one corridor**
+
+This guarantees:
+
+* No point is lost
+* No point appears in two corridors
+* Corridors emerge naturally from spatial continuity
+
+---
+
+### 5️⃣ FILTER TRIVIAL CORRIDORS (OPTIONAL BUT RECOMMENDED)
+
+To reduce noise:
+
+* Discard corridors with:
+
+  * Fewer than `N_min` points (e.g. < 5)
+* These points remain visible individually
+* They simply don’t form a corridor
+
+This preserves data while improving signal clarity.
+
+---
+
+### 6️⃣ COMPUTE CORRIDOR METADATA (DERIVED ONLY)
 
 For each corridor:
 
-* Attach **1–3 suggested interventions**
-* Store them with the corridor document
+* Corridor ID (UUID)
+* List of point IDs
+* Convex hull OR ordered polyline (for visualization)
+* Mean priority score
+* Mean AQI / heat / NDVI
+* Approximate corridor length (sum of inter-point distances)
+
+⚠️ Do NOT modify underlying point records.
 
 ---
 
-### 4️⃣ Backend API additions
+### 7️⃣ STORE CORRIDORS (NEW COLLECTION)
 
-Add **one new endpoint**:
+Create a new MongoDB collection: `corridors`
+
+Example:
+
+```json
+{
+  "corridor_id": "uuid",
+  "point_ids": [...],
+  "geometry": "LineString or MultiPoint",
+  "mean_priority": 0.83,
+  "mean_aqi": 0.71,
+  "num_points": 18,
+  "created_at": "ISO-8601"
+}
+```
+
+Points remain stored separately.
+
+---
+
+### 8️⃣ BACKEND API (NEW, READ-ONLY)
+
+Add new endpoints **without modifying existing ones**:
 
 ```
-GET /corridors/{id}/proposal
+GET /corridors
 ```
 
 Returns:
 
-```json
-{
-  "corridor_type": "Heat Mitigation",
-  "suggested_interventions": [...],
-  "exposure_breakdown": {...}
-}
-```
-
----
-
-## PART 2 — BEFORE / AFTER VISUAL MOCKUP (FRONTEND)
-
-### 5️⃣ Conceptual “Before / After” visualization (NOT simulation)
-
-This is **illustrative**, not quantitative.
-
-#### BEFORE
-
-* Existing corridor geometry
-* Exposure color (current map)
-
-#### AFTER (mock)
-
-Overlay:
-
-* Tree icons along the corridor
-* Semi-transparent green shading
-* Optional dashed line for shaded walkway
-
-⚠️ This is a **visual suggestion**, not a predicted outcome.
-
----
-
-### 6️⃣ UI Implementation
-
-When a corridor is clicked:
-
-* Open a **Corridor Proposal Panel**
-* Tabs:
-
-  * **Overview**
-  * **Suggested Interventions**
-  * **Before / After**
-
-Before/After can be:
-
-* Toggle switch
-* Or side-by-side map view (simple)
-
----
-
-### 7️⃣ UI copy (important)
-
-Use **careful language**:
-
-✅ “Suggested intervention”
-✅ “Conceptual illustration”
-❌ “Predicted impact”
-❌ “Simulated reduction”
-
-This keeps the prototype honest and defensible.
-
----
-
-## PART 3 — COMMUNITY INPUT (LIGHTWEIGHT)
-
-### 8️⃣ User suggestions
-
-Allow users to:
-
-* Click a corridor
-* Submit a **text suggestion**:
-
-  * “Add benches”
-  * “Too narrow for trees”
-  * “Good cycling route”
-
-Backend:
+* corridor_id
+* geometry
+* mean_priority
+* num_points
 
 ```
-POST /corridors/{id}/feedback
+GET /corridors/{id}
 ```
 
-Store:
+Returns:
 
-```json
-{
-  "corridor_id": "...",
-  "comment": "...",
-  "timestamp": "...",
-  "votes": 0
-}
-```
-
-No authentication required (MVP).
+* full metadata
+* list of point IDs
+* linked point details (optional)
 
 ---
 
-### 9️⃣ Voting mechanism
-
-For each corridor:
-
-* 👍 Upvote
-* 👎 Downvote
-
-Votes:
-
-* Stored per corridor
-* Displayed as **community support indicator**
-* Do NOT affect analytics
+## FRONTEND TASKS (STEP BY STEP)
 
 ---
 
-### 10️⃣ Frontend display
+### 9️⃣ CORRIDOR VISUALIZATION LAYER
 
-In Corridor Proposal Panel:
+Add a new toggle:
 
-* Show:
+> **“High-Exposure Corridors”**
 
-  * Vote count
-  * Top 3 comments
-* Sort comments by votes
+Behavior:
 
-Keep UI minimal.
+* Draw corridors as lines connecting points
+* Thickness > points
+* Color by mean priority
+* Points remain visible underneath
 
 ---
 
-## WHAT NOT TO DO (VERY IMPORTANT)
+### 🔟 INTERACTION BEHAVIOR
 
-❌ Do NOT recompute corridors based on votes
-❌ Do NOT introduce budgets or costs
-❌ Do NOT claim health or AQI reduction
-❌ Do NOT add login/auth
-❌ Do NOT over-design visuals
+On corridor click:
 
-This is **collaborative planning**, not execution.
+* Highlight corridor
+* Highlight constituent points
+* Show corridor summary:
+
+  * Number of points
+  * Avg exposure
+  * Dominant exposure type
+
+Points should still be clickable individually.
+
+---
+
+## OPTIONAL IMPROVEMENTS (SAFE IDEAS)
+
+If needed, you MAY:
+
+* Order points along the corridor using nearest-neighbor chaining
+* Smooth the line visually (for UI only)
+* Add a “corridor confidence” score based on point density
+
+These are **visual improvements only**, not analytics.
+
+---
+
+## WHAT NOT TO DO (CRITICAL)
+
+❌ Do not introduce road segments
+❌ Do not recalculate exposure
+❌ Do not cluster by priority value
+❌ Do not merge or average points
+❌ Do not delete orphan points
+
+This phase is **connecting dots**, not redefining them.
 
 ---
 
 ## EXPECTED END STATE
 
-After this phase, the platform:
+After implementation:
 
-✔ Identifies green corridors
-✔ Suggests **context-appropriate interventions**
-✔ Shows a **clear before/after vision**
-✔ Allows **public participation**
-✔ Stays scientifically honest
+* All original points still exist
+* Corridors appear naturally from spatial proximity
+* Map clearly shows:
 
-And **perfectly matches** the problem statement.
-
----
-
-## FINAL CHECKLIST
-
-Before finishing:
-
-* Corridor click → proposal panel works
-* Suggested interventions are consistent
-* Before/after toggle is clear
-* Users can comment and vote
-* No core analytics were altered
+  * Isolated hotspots
+  * Continuous exposure paths
+* The system feels **cleaner, not heavier**
 
 ---
 
-## NOW IMPLEMENT THIS PHASE.
+## VERIFICATION CHECKLIST
+
+Before marking complete:
+
+* Every point still renders
+* No point appears in two corridors
+* Changing `D_max` changes corridor shapes
+* Orphan points still visible
+* Corridor results are stable across reloads
+
+---
+
+## FINAL INSTRUCTION
+
+Implement this as a **non-destructive aggregation layer**.
+
+Add:
+
+* Clear comments explaining:
+
+  * Why distance-based connectivity was chosen
+  * Why points are preserved
+
+---
+
+## NOW IMPLEMENT THIS FEATURE.

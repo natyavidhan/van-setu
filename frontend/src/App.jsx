@@ -13,7 +13,8 @@ export default function App() {
     lst: false,
     gdi: true,  // Default: show GDI
     roads: false,
-    corridors: true,  // Default: show corridors
+    corridors: false,  // Original road-based corridors
+    aggregatedCorridors: true,  // NEW: Point-based aggregated corridors (default on)
     aqi: false,  // AQI stations layer
   });
 

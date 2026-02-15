@@ -42,6 +42,50 @@ export const roadsApi = {
 };
 
 /**
+ * Aggregated Corridors endpoints (Point-Based Corridor Aggregation)
+ * 
+ * These endpoints provide the new corridor aggregation feature that:
+ * - Takes existing high-priority points as input
+ * - Connects spatially continuous points into corridors
+ * - Preserves all original points
+ * - Adds a new corridor abstraction layer on top
+ */
+export const corridorsApi = {
+  /**
+   * Get aggregated corridors as GeoJSON
+   * @param {number} dMax - Maximum connection distance in meters (default: 30)
+   * @param {number} nMin - Minimum points for valid corridor (default: 5)
+   * @param {number} percentile - Percentile threshold for high-priority points (default: 85)
+   */
+  aggregated: (dMax = 30, nMin = 5, percentile = 85) => api.get('/corridors/aggregated', {
+    params: { d_max: dMax, n_min: nMin, percentile }
+  }),
+  
+  /**
+   * Get specific corridor with point details
+   * @param {string} corridorId - UUID of the corridor
+   * @param {boolean} includePoints - Include full point details (default: true)
+   */
+  detail: (corridorId, includePoints = true) => api.get(`/corridors/aggregated/${corridorId}`, {
+    params: { include_points: includePoints }
+  }),
+  
+  /**
+   * Get high-priority points used for aggregation
+   * @param {number} percentile - Percentile threshold
+   * @param {boolean} includeAll - Include all points, not just high-priority
+   */
+  points: (percentile = 85, includeAll = false) => api.get('/corridors/points', {
+    params: { percentile, include_all: includeAll }
+  }),
+  
+  /**
+   * Get corridor statistics
+   */
+  stats: () => api.get('/corridors/stats'),
+};
+
+/**
  * AQI endpoints
  */
 export const aqiApi = {
@@ -49,79 +93,6 @@ export const aqiApi = {
   status: () => api.get('/aqi/status'),
   atPoint: (lat, lng) => api.get('/aqi/point', { params: { lat, lng } }),
   refresh: () => api.post('/aqi/refresh'),
-};
-
-/**
- * Corridors endpoints (aggregated priority corridors)
- */
-export const corridorsApi = {
-  list: (threshold = 0.60, minLength = 200, includeAqi = true) => 
-    api.get('/priority-corridors', { 
-      params: { 
-        priority_threshold: threshold, 
-        min_length: minLength,
-        include_aqi: includeAqi 
-      } 
-    }),
-  
-  /**
-   * Stream corridors one-by-one using fetch with ReadableStream.
-   * Calls onEvent callback for each SSE event.
-   */
-  stream: async (threshold = 0.60, minLength = 200, includeAqi = true, onEvent) => {
-    const params = new URLSearchParams({
-      priority_threshold: threshold,
-      min_length: minLength,
-      include_aqi: includeAqi
-    });
-    
-    const response = await fetch(`${API_BASE}/priority-corridors/stream?${params}`);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // Keep incomplete line in buffer
-      
-      let eventType = null;
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith('data: ') && eventType) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            onEvent({ type: eventType, data });
-          } catch (e) {
-            console.warn('Failed to parse SSE data:', line);
-          }
-          eventType = null;
-        }
-      }
-    }
-  },
-  
-  detail: (corridorId) => api.get(`/priority-corridors/${corridorId}`),
-  summary: () => api.get('/priority-corridors/stats/summary'),
-  
-  // Proposal endpoints
-  proposal: (corridorId) => api.get(`/priority-corridors/${corridorId}/proposal`),
-  
-  // Community feedback endpoints
-  getFeedback: (corridorId, limit = 10) => 
-    api.get(`/priority-corridors/${corridorId}/feedback`, { params: { limit } }),
-  addFeedback: (corridorId, comment) => 
-    api.post(`/priority-corridors/${corridorId}/feedback`, { comment }),
-  voteCorridor: (corridorId, upvote = true) => 
-    api.post(`/priority-corridors/${corridorId}/vote`, { upvote }),
-  voteFeedback: (feedbackId, upvote = true) => 
-    api.post(`/feedback/${feedbackId}/vote`, { upvote }),
-  getCommunity: (corridorId, feedbackLimit = 5) => 
-    api.get(`/priority-corridors/${corridorId}/community`, { params: { feedback_limit: feedbackLimit } }),
 };
 
 /**

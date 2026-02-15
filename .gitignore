@@ -1,6 +1,5 @@
 .venv/
 cache/
-*.tif
 __pycache__/
 .env
 backend/.env

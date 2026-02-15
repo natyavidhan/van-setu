@@ -44,9 +44,6 @@ class Settings(BaseSettings):
     # Cache settings
     cache_ttl: int = 3600  # 1 hour
     
-    # AQI API Settings
-    openaq_api_key: str = ""
-    
     @property
     def ndvi_full_path(self) -> Path:
         return self.data_dir / self.ndvi_path
@@ -65,7 +62,7 @@ class Settings(BaseSettings):
         }
     
     class Config:
-        env_file = str(Path(__file__).parent.parent / ".env")
+        env_file = ".env"
         env_file_encoding = "utf-8"
 
 

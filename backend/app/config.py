@@ -7,6 +7,21 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
+def get_data_dir() -> Path:
+    """Get data directory, supporting both local dev and Docker deployment."""
+    # Check for explicit DATA_DIR env var first
+    if os.environ.get("DATA_DIR"):
+        return Path(os.environ["DATA_DIR"])
+    
+    # In Docker (HF Spaces), files are in /home/user/app/
+    docker_path = Path("/home/user/app")
+    if docker_path.exists() and (docker_path / "delhi_ndvi_10m.tif").exists():
+        return docker_path
+    
+    # Local development: go up from config.py to project root
+    return Path(__file__).parent.parent.parent
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
@@ -16,7 +31,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     
     # Data Paths (relative to project root)
-    data_dir: Path = Path(__file__).parent.parent.parent  # innovateNSUT/
+    data_dir: Path = get_data_dir()
     ndvi_path: str = "delhi_ndvi_10m.tif"
     lst_path: str = "delhi_lst_modis_daily_celsius.tif"
     

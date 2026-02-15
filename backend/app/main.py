@@ -3,8 +3,12 @@ FastAPI Application Entry Point
 
 Urban Green Corridor Planning Platform — Backend API
 """
+import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 
 from app.config import get_settings
@@ -76,15 +80,6 @@ def create_app() -> FastAPI:
     app.include_router(aqi.router, prefix=settings.api_prefix, tags=["Air Quality"])
     app.include_router(corridors.router, prefix=settings.api_prefix, tags=["Corridor Aggregation"])
     
-    @app.get("/", tags=["Health"])
-    async def root():
-        """Health check endpoint."""
-        return {
-            "status": "healthy",
-            "app": settings.app_name,
-            "version": "1.0.0"
-        }
-    
     @app.get("/health", tags=["Health"])
     async def health_check():
         """Detailed health check."""
@@ -94,6 +89,36 @@ def create_app() -> FastAPI:
             "raster_loaded": raster is not None and raster.is_loaded,
             "bounds": settings.delhi_bounds
         }
+    
+    # Serve static frontend files if the static directory exists (Docker deployment)
+    static_dir = Path(__file__).parent.parent / "static"
+    print(f"📁 Checking for static dir: {static_dir} (exists: {static_dir.exists()})")
+    
+    if static_dir.exists():
+        print(f"✅ Serving frontend from {static_dir}")
+        
+        # Serve static assets (JS, CSS, etc.)
+        if (static_dir / "assets").exists():
+            app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+        
+        # Override the root route to serve index.html
+        @app.get("/", include_in_schema=False)
+        async def serve_index():
+            """Serve the React SPA index."""
+            return FileResponse(static_dir / "index.html")
+        
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_spa(full_path: str):
+            """Serve the React SPA for any non-API routes."""
+            # Don't intercept API routes or docs
+            if full_path.startswith("api") or full_path in ["docs", "redoc", "openapi.json", "health"]:
+                return None
+            
+            file_path = static_dir / full_path
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(file_path)
+            # Return index.html for SPA routing
+            return FileResponse(static_dir / "index.html")
     
     return app
 

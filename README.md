@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Urban Green Corridor Platform
 
 A full-stack web application for visualizing and analyzing urban green corridor planning data for Delhi NCT.
@@ -108,3 +109,15 @@ npm run dev
 ## License
 
 MIT
+=======
+---
+title: Vansetu
+emoji: 📉
+colorFrom: green
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+>>>>>>> 8afd98ad2f725ce7c1b17731937223640542c96c

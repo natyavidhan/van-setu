@@ -149,12 +149,6 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 color="#fc8d59"
               />
               <Toggle
-                label="High-Exposure Corridors"
-                checked={activeLayers.aggregatedCorridors}
-                onChange={() => toggleLayer('aggregatedCorridors')}
-                color="#d73027"
-              />
-              <Toggle
                 label="AQI Stations"
                 checked={activeLayers.aqi}
                 onChange={() => toggleLayer('aqi')}

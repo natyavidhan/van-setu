@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap, useMapEvents, CircleMarker, Popup, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getTileUrl, roadsApi, statsApi, aqiApi, corridorsApi } from '../api';
+import { getTileUrl, roadsApi, statsApi, aqiApi } from '../api';
 import './Map.css';
 
 // Delhi NCT center and bounds
@@ -167,127 +167,6 @@ function PointInfo({ data, onClose }) {
 }
 
 /**
- * Corridor Summary Panel - shows detailed info when a corridor is selected
- * 
- * Displays:
- * - Number of constituent points
- * - Average exposure metrics
- * - Dominant exposure type
- * - Corridor length
- */
-function CorridorSummary({ corridorId, corridors, onClose }) {
-  const corridor = corridors?.features?.find(
-    f => f.properties?.corridor_id === corridorId
-  );
-  
-  if (!corridor) return null;
-  
-  const props = corridor.properties;
-  
-  const getPriorityColor = (value) => {
-    if (value > 0.75) return '#d73027';
-    if (value > 0.6) return '#fc8d59';
-    if (value > 0.45) return '#fee08b';
-    return '#91cf60';
-  };
-  
-  const exposureLabels = {
-    'heat': { icon: '🌡️', label: 'Heat Stress' },
-    'green_deficit': { icon: '🌿', label: 'Green Deficit' },
-    'air_quality': { icon: '💨', label: 'Air Pollution' },
-    'unknown': { icon: '❓', label: 'Unknown' }
-  };
-  
-  const exposure = exposureLabels[props.dominant_exposure] || exposureLabels.unknown;
-  
-  return (
-    <div className="corridor-summary">
-      <button className="close-btn" onClick={onClose}>×</button>
-      <h4>🛤️ Exposure Corridor</h4>
-      
-      <div className="corridor-stats">
-        <div className="stat-row">
-          <span className="stat-label">Points</span>
-          <span className="stat-value">{props.num_points}</span>
-        </div>
-        
-        <div className="stat-row">
-          <span className="stat-label">Length</span>
-          <span className="stat-value">
-            {props.corridor_length_m ? `${Math.round(props.corridor_length_m)}m` : 'N/A'}
-          </span>
-        </div>
-        
-        <div className="stat-row priority-row">
-          <span className="stat-label">Mean Priority</span>
-          <span 
-            className="stat-value priority"
-            style={{ color: getPriorityColor(props.mean_priority) }}
-          >
-            {props.mean_priority?.toFixed(3) || 'N/A'}
-          </span>
-        </div>
-        
-        <div className="stat-row">
-          <span className="stat-label">Dominant Exposure</span>
-          <span className="stat-value">
-            {exposure.icon} {exposure.label}
-          </span>
-        </div>
-      </div>
-      
-      <div className="corridor-details">
-        <h5>Exposure Breakdown</h5>
-        <div className="exposure-bars">
-          {props.mean_heat !== null && props.mean_heat !== undefined && (
-            <div className="exposure-bar">
-              <span className="bar-label">🌡️ Heat</span>
-              <div className="bar-track">
-                <div 
-                  className="bar-fill heat"
-                  style={{ width: `${props.mean_heat * 100}%` }}
-                />
-              </div>
-              <span className="bar-value">{(props.mean_heat * 100).toFixed(0)}%</span>
-            </div>
-          )}
-          
-          {props.mean_ndvi !== null && props.mean_ndvi !== undefined && (
-            <div className="exposure-bar">
-              <span className="bar-label">🌿 Green</span>
-              <div className="bar-track">
-                <div 
-                  className="bar-fill green"
-                  style={{ width: `${props.mean_ndvi * 100}%` }}
-                />
-              </div>
-              <span className="bar-value">{(props.mean_ndvi * 100).toFixed(0)}%</span>
-            </div>
-          )}
-          
-          {props.mean_aqi !== null && props.mean_aqi !== undefined && (
-            <div className="exposure-bar">
-              <span className="bar-label">💨 AQI</span>
-              <div className="bar-track">
-                <div 
-                  className="bar-fill aqi"
-                  style={{ width: `${props.mean_aqi * 100}%` }}
-                />
-              </div>
-              <span className="bar-value">{(props.mean_aqi * 100).toFixed(0)}%</span>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      <div className="corridor-note">
-        <small>Click corridor again to deselect</small>
-      </div>
-    </div>
-  );
-}
-
-/**
  * Main Map component
  */
 export default function Map({ activeLayers, onStatsUpdate }) {
@@ -297,20 +176,13 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   const [pointData, setPointData] = useState(null);
   const [loading, setLoading] = useState({});
   
-  // New state for aggregated corridors (point-based)
-  const [aggregatedCorridors, setAggregatedCorridors] = useState(null);
-  const [highPriorityPoints, setHighPriorityPoints] = useState(null);
-  const [selectedCorridor, setSelectedCorridor] = useState(null);
-  const [corridorConfig, setCorridorConfig] = useState({
-    dMax: 30,
-    nMin: 5,
-    percentile: 85
-  });
+  // State for corridor hover highlighting
+  const [hoveredCorridor, setHoveredCorridor] = useState(null);
 
   // Determine which raster layer is active (only one at a time for clarity)
   const activeRaster = activeLayers.gdi ? 'gdi' : activeLayers.lst ? 'lst' : activeLayers.ndvi ? 'ndvi' : null;
 
-  // Load corridors when toggled (existing road-based corridors)
+  // Load corridors when toggled
   useEffect(() => {
     if (activeLayers.corridors && !corridors) {
       setLoading(prev => ({ ...prev, corridors: true }));
@@ -320,25 +192,6 @@ export default function Map({ activeLayers, onStatsUpdate }) {
         .finally(() => setLoading(prev => ({ ...prev, corridors: false })));
     }
   }, [activeLayers.corridors, corridors]);
-
-  // Load aggregated corridors when toggled (new point-based corridors)
-  useEffect(() => {
-    if (activeLayers.aggregatedCorridors) {
-      setLoading(prev => ({ ...prev, aggregatedCorridors: true }));
-      const { dMax, nMin, percentile } = corridorConfig;
-      
-      Promise.all([
-        corridorsApi.aggregated(dMax, nMin, percentile),
-        corridorsApi.points(percentile, false)
-      ])
-        .then(([corridorsRes, pointsRes]) => {
-          setAggregatedCorridors(corridorsRes.data);
-          setHighPriorityPoints(pointsRes.data);
-        })
-        .catch(err => console.error('Failed to load aggregated corridors:', err))
-        .finally(() => setLoading(prev => ({ ...prev, aggregatedCorridors: false })));
-    }
-  }, [activeLayers.aggregatedCorridors, corridorConfig]);
 
   // Load roads when toggled
   useEffect(() => {
@@ -374,77 +227,26 @@ export default function Map({ activeLayers, onStatsUpdate }) {
 
   // Style for corridors (high priority = red)
   // Now uses priority_score (multi-exposure) instead of just GDI
-  const corridorStyle = (feature) => {
+  // Supports hover highlighting
+  const corridorStyle = useCallback((feature) => {
     const priority = feature.properties?.priority_score ?? feature.properties?.gdi_mean ?? 0.5;
-    return {
-      color: priority > 0.7 ? '#d73027' : priority > 0.5 ? '#fc8d59' : '#fee08b',
-      weight: 4,
-      opacity: 0.9,
-    };
-  };
-
-  /**
-   * Style for aggregated corridors (point-based)
-   * These are thicker than the original corridors to visually distinguish them
-   * Color is based on mean_priority (derived from constituent points)
-   */
-  const aggregatedCorridorStyle = (feature) => {
-    const priority = feature.properties?.mean_priority ?? 0.5;
-    const isSelected = selectedCorridor === feature.properties?.corridor_id;
+    const featureId = feature.properties?.name || feature.id || JSON.stringify(feature.geometry?.coordinates?.[0]);
+    const isHovered = hoveredCorridor === featureId;
     
-    // Color gradient: green (low) -> yellow -> orange -> red (high)
+    // Color based on priority
     let color;
-    if (priority > 0.75) color = '#d73027';      // Critical - dark red
-    else if (priority > 0.6) color = '#fc8d59';  // High - orange
-    else if (priority > 0.45) color = '#fee08b'; // Moderate - yellow
-    else color = '#91cf60';                      // Low - light green
+    if (priority > 0.7) color = '#d73027';      // Critical - dark red
+    else if (priority > 0.5) color = '#fc8d59'; // High - orange
+    else color = '#fee08b';                     // Moderate - yellow
     
     return {
-      color: isSelected ? '#1a1aff' : color,
-      weight: isSelected ? 8 : 6,
-      opacity: isSelected ? 1 : 0.85,
+      color: isHovered ? '#00ffff' : color,
+      weight: isHovered ? 7 : 4,
+      opacity: isHovered ? 1 : 0.85,
       lineCap: 'round',
       lineJoin: 'round',
     };
-  };
-
-  /**
-   * Style for high-priority points used in corridor aggregation
-   * Points remain visible underneath corridors
-   */
-  const getPointStyle = (feature) => {
-    const priority = feature.properties?.priority_score ?? 0.5;
-    const isInSelectedCorridor = selectedCorridor && 
-      aggregatedCorridors?.features?.some(c => 
-        c.properties.corridor_id === selectedCorridor &&
-        c.properties.point_ids?.includes(feature.properties.point_id)
-      );
-    
-    let fillColor;
-    if (priority > 0.75) fillColor = '#d73027';
-    else if (priority > 0.6) fillColor = '#fc8d59';
-    else if (priority > 0.45) fillColor = '#fee08b';
-    else fillColor = '#91cf60';
-    
-    return {
-      radius: isInSelectedCorridor ? 6 : 4,
-      fillColor: fillColor,
-      color: isInSelectedCorridor ? '#1a1aff' : '#fff',
-      weight: isInSelectedCorridor ? 2 : 1,
-      opacity: 1,
-      fillOpacity: 0.8,
-    };
-  };
-
-  /**
-   * Handle corridor click - highlight corridor and its constituent points
-   */
-  const handleCorridorClick = useCallback((feature) => {
-    const corridorId = feature.properties?.corridor_id;
-    if (corridorId) {
-      setSelectedCorridor(prev => prev === corridorId ? null : corridorId);
-    }
-  }, []);
+  }, [hoveredCorridor]);
 
   // Style for roads (subtle gray)
   const roadStyle = {
@@ -516,24 +318,89 @@ export default function Map({ activeLayers, onStatsUpdate }) {
           />
         )}
 
-        {/* Corridors layer */}
+        {/* Corridors layer - with hover highlighting and tooltips */}
         {activeLayers.corridors && corridors && (
           <GeoJSON
-            key="corridors"
+            key={`corridors-${hoveredCorridor || 'none'}`}
             data={corridors}
             style={corridorStyle}
             onEachFeature={(feature, layer) => {
               const props = feature.properties;
               if (props) {
-                const priority = props.priority_score ?? props.gdi_mean;
+                const priority = props.priority_score ?? props.gdi_mean ?? 0.5;
                 const aqi = props.aqi_raw;
-                layer.bindPopup(`
-                  <b>Proposed Green Corridor</b><br/>
-                  Road: ${props.name || 'Unnamed'}<br/>
-                  Priority Score: ${priority?.toFixed(3) || 'N/A'}<br/>
-                  ${aqi ? `PM2.5 AQI: ${Math.round(aqi)}` : ''}<br/>
-                  Risk Level: ${priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate'}
-                `);
+                const heat = props.heat_norm;
+                const ndvi = props.ndvi_norm;
+                const aqiNorm = props.aqi_norm;
+                const roadName = props.name || 'Unnamed Road';
+                const featureId = props.name || feature.id || JSON.stringify(feature.geometry?.coordinates?.[0]);
+                
+                // Priority level styling
+                const priorityColor = priority > 0.7 ? '#d73027' : priority > 0.5 ? '#fc8d59' : '#91cf60';
+                const priorityLabel = priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate';
+                
+                // Bind tooltip for hover display
+                layer.bindTooltip(`
+                  <div class="corridor-tooltip">
+                    <div class="tooltip-header">
+                      <span class="tooltip-icon">🛤️</span>
+                      <span class="tooltip-title">${roadName}</span>
+                      <span class="tooltip-priority" style="background: ${priorityColor}">${priorityLabel}</span>
+                    </div>
+                    <div class="tooltip-stats">
+                      <div class="tooltip-stat">
+                        <span class="stat-icon">📊</span>
+                        <span class="stat-value">${priority?.toFixed(2) || '—'}</span>
+                        <span class="stat-label">priority</span>
+                      </div>
+                      ${aqi ? `
+                      <div class="tooltip-stat">
+                        <span class="stat-icon">💨</span>
+                        <span class="stat-value">${Math.round(aqi)}</span>
+                        <span class="stat-label">PM2.5</span>
+                      </div>
+                      ` : ''}
+                    </div>
+                    <div class="tooltip-bars">
+                      ${heat != null ? `
+                        <div class="tooltip-bar">
+                          <span class="bar-icon">🌡️</span>
+                          <div class="bar-track"><div class="bar-fill heat" style="width: ${heat * 100}%"></div></div>
+                          <span class="bar-pct">${(heat * 100).toFixed(0)}%</span>
+                        </div>
+                      ` : ''}
+                      ${ndvi != null ? `
+                        <div class="tooltip-bar">
+                          <span class="bar-icon">🌿</span>
+                          <div class="bar-track"><div class="bar-fill green" style="width: ${ndvi * 100}%"></div></div>
+                          <span class="bar-pct">${(ndvi * 100).toFixed(0)}%</span>
+                        </div>
+                      ` : ''}
+                      ${aqiNorm != null ? `
+                        <div class="tooltip-bar">
+                          <span class="bar-icon">💨</span>
+                          <div class="bar-track"><div class="bar-fill aqi" style="width: ${aqiNorm * 100}%"></div></div>
+                          <span class="bar-pct">${(aqiNorm * 100).toFixed(0)}%</span>
+                        </div>
+                      ` : ''}
+                    </div>
+                  </div>
+                `, {
+                  sticky: true,
+                  direction: 'top',
+                  offset: [0, -10],
+                  className: 'corridor-tooltip-container'
+                });
+                
+                // Hover events for highlighting
+                layer.on('mouseover', () => {
+                  setHoveredCorridor(featureId);
+                  layer.bringToFront();
+                });
+                
+                layer.on('mouseout', () => {
+                  setHoveredCorridor(null);
+                });
               }
             }}
           />
@@ -572,145 +439,6 @@ export default function Map({ activeLayers, onStatsUpdate }) {
           })
         )}
 
-        {/* 
-          HIGH-EXPOSURE CORRIDORS (Point-Based Aggregation)
-          
-          This layer shows corridors formed by connecting spatially continuous 
-          high-priority points. Key characteristics:
-          - Corridors are thicker lines to distinguish from individual road segments
-          - Color represents mean priority of constituent points
-          - Points remain visible underneath
-          - Hover to see stats, click to highlight corridor and its points
-        */}
-        {activeLayers.aggregatedCorridors && aggregatedCorridors && aggregatedCorridors.features && (
-          <GeoJSON
-            key={`aggregated-corridors-${selectedCorridor || 'none'}`}
-            data={aggregatedCorridors}
-            style={aggregatedCorridorStyle}
-            onEachFeature={(feature, layer) => {
-              const props = feature.properties;
-              if (props) {
-                const priority = props.mean_priority;
-                const length = props.corridor_length_m;
-                const numPoints = props.num_points;
-                const dominantExposure = props.dominant_exposure;
-                
-                // Format exposure type for display
-                const exposureLabels = {
-                  'heat': '🌡️ Heat Stress',
-                  'green_deficit': '🌿 Green Deficit',
-                  'air_quality': '💨 Air Pollution',
-                  'unknown': '❓ Unknown'
-                };
-
-                // Priority level styling
-                const priorityColor = priority > 0.7 ? '#d73027' : priority > 0.5 ? '#fc8d59' : '#91cf60';
-                const priorityLabel = priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate';
-                
-                // Bind tooltip for hover display
-                layer.bindTooltip(`
-                  <div class="corridor-tooltip">
-                    <div class="tooltip-header">
-                      <span class="tooltip-icon">🛤️</span>
-                      <span class="tooltip-title">Exposure Corridor</span>
-                      <span class="tooltip-priority" style="background: ${priorityColor}">${priorityLabel}</span>
-                    </div>
-                    <div class="tooltip-stats">
-                      <div class="tooltip-stat">
-                        <span class="stat-icon">📍</span>
-                        <span class="stat-value">${numPoints}</span>
-                        <span class="stat-label">points</span>
-                      </div>
-                      <div class="tooltip-stat">
-                        <span class="stat-icon">📏</span>
-                        <span class="stat-value">${length ? Math.round(length) : '—'}</span>
-                        <span class="stat-label">meters</span>
-                      </div>
-                      <div class="tooltip-stat">
-                        <span class="stat-icon">📊</span>
-                        <span class="stat-value">${priority?.toFixed(2) || '—'}</span>
-                        <span class="stat-label">priority</span>
-                      </div>
-                    </div>
-                    <div class="tooltip-exposure">
-                      <span class="exposure-label">Dominant:</span>
-                      <span class="exposure-value">${exposureLabels[dominantExposure] || dominantExposure}</span>
-                    </div>
-                    <div class="tooltip-bars">
-                      ${props.mean_heat != null ? `
-                        <div class="tooltip-bar">
-                          <span class="bar-icon">🌡️</span>
-                          <div class="bar-track"><div class="bar-fill heat" style="width: ${props.mean_heat * 100}%"></div></div>
-                          <span class="bar-pct">${(props.mean_heat * 100).toFixed(0)}%</span>
-                        </div>
-                      ` : ''}
-                      ${props.mean_ndvi != null ? `
-                        <div class="tooltip-bar">
-                          <span class="bar-icon">🌿</span>
-                          <div class="bar-track"><div class="bar-fill green" style="width: ${props.mean_ndvi * 100}%"></div></div>
-                          <span class="bar-pct">${(props.mean_ndvi * 100).toFixed(0)}%</span>
-                        </div>
-                      ` : ''}
-                      ${props.mean_aqi != null ? `
-                        <div class="tooltip-bar">
-                          <span class="bar-icon">💨</span>
-                          <div class="bar-track"><div class="bar-fill aqi" style="width: ${props.mean_aqi * 100}%"></div></div>
-                          <span class="bar-pct">${(props.mean_aqi * 100).toFixed(0)}%</span>
-                        </div>
-                      ` : ''}
-                    </div>
-                    <div class="tooltip-hint">Click to select</div>
-                  </div>
-                `, {
-                  sticky: true,
-                  direction: 'top',
-                  offset: [0, -10],
-                  className: 'corridor-tooltip-container'
-                });
-                
-                // Click to select/highlight corridor
-                layer.on('click', () => handleCorridorClick(feature));
-              }
-            }}
-          />
-        )}
-
-        {/* 
-          HIGH-PRIORITY POINTS 
-          
-          These are the input points to the corridor aggregation algorithm.
-          They remain visible underneath the corridor lines to show:
-          - Original point-level data is preserved
-          - Which points belong to which corridor
-          - Isolated (orphan) points that don't form corridors
-        */}
-        {activeLayers.aggregatedCorridors && highPriorityPoints && highPriorityPoints.features && (
-          highPriorityPoints.features.map((point, idx) => {
-            const coords = point.geometry.coordinates;
-            const props = point.properties;
-            const style = getPointStyle(point);
-            
-            return (
-              <CircleMarker
-                key={`hp-point-${idx}`}
-                center={[coords[1], coords[0]]}
-                {...style}
-              >
-                <Popup>
-                  <div className="point-popup">
-                    <b>📍 High-Priority Point</b><br/>
-                    {props.road_name && <><b>Road:</b> {props.road_name}<br/></>}
-                    <b>Priority:</b> {props.priority_score?.toFixed(3) || 'N/A'}<br/>
-                    {props.heat_norm && <><b>Heat:</b> {(props.heat_norm * 100).toFixed(0)}%<br/></>}
-                    {props.ndvi_norm && <><b>Vegetation:</b> {(props.ndvi_norm * 100).toFixed(0)}%<br/></>}
-                    {props.aqi_norm && <><b>AQI:</b> {(props.aqi_norm * 100).toFixed(0)}%<br/></>}
-                  </div>
-                </Popup>
-              </CircleMarker>
-            );
-          })
-        )}
-
         {/* Click handler for point queries */}
         <ClickHandler onPointQuery={handlePointQuery} />
       </MapContainer>
@@ -718,24 +446,15 @@ export default function Map({ activeLayers, onStatsUpdate }) {
       {/* Legend */}
       {activeRaster && <Legend activeLayer={activeRaster} />}
 
-      {/* Corridor Summary Panel - shows when a corridor is selected */}
-      {selectedCorridor && aggregatedCorridors && (
-        <CorridorSummary 
-          corridorId={selectedCorridor}
-          corridors={aggregatedCorridors}
-          onClose={() => setSelectedCorridor(null)}
-        />
-      )}
-
       {/* Point info popup */}
       {pointData && (
         <PointInfo data={pointData} onClose={() => setPointData(null)} />
       )}
 
       {/* Loading indicators */}
-      {(loading.corridors || loading.roads || loading.aqi || loading.aggregatedCorridors) && (
+      {(loading.corridors || loading.roads || loading.aqi) && (
         <div className="loading-indicator">
-          Loading {loading.aggregatedCorridors ? 'exposure corridors' : loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...
+          Loading {loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...
         </div>
       )}
     </div>

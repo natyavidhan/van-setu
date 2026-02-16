@@ -1,267 +1,223 @@
 # 🧠 MASTER IMPLEMENTATION PROMPT
 
-## **FEATURE: COMMUNITY SUGGESTIONS & UPVOTING (CORRIDOR-LEVEL)**
+## **FEATURE: BEFORE–AFTER CORRIDOR VISUAL (CONCEPTUAL MOCKUP)**
 
 > **IMPORTANT:**
-> This feature extends the **existing corridor right-side panel**.
-> Do NOT create a new page or modal.
-> Do NOT introduce authentication.
+> This feature is **purely visual and conceptual**.
+> Do NOT simulate temperature, AQI, or vegetation growth.
+> Do NOT add new datasets.
 
 ---
 
 ## ROLE & EXPECTATION
 
-You are a **senior full-stack engineer** working on a geospatial planning platform.
+You are a **senior frontend-focused full-stack engineer** working on an urban planning visualization platform.
 
-Your task is to add **community participation features** that allow users to:
+Your task is to add a **Before–After visual/mockup** for a **selected corridor**, clearly showing:
 
-* Submit suggestions for a selected corridor
-* Upvote existing suggestions
-* See community sentiment per corridor
+* Existing street condition (**Before**)
+* Proposed green intervention (**After**)
 
-This must be:
+This must:
 
-* Lightweight
-* Abuse-resistant (basic rate limiting)
-* Easy to remove or expand later
+* Reuse existing corridor geometry
+* Match the corridor’s **recommended intervention type**
+* Be visually clear, honest, and presentation-ready
 
 ---
 
-## EXISTING SYSTEM (ASSUME THIS IS DONE)
+## EXISTING SYSTEM (ASSUME THIS IS TRUE)
 
 ### Frontend
 
 * React (Vite)
-* Map with corridors
-* Clicking a corridor:
+* Interactive map (Mapbox GL JS or Leaflet)
+* Corridor click:
 
-  * Zooms map
+  * Zooms to corridor
   * Opens right-side panel
-  * Shows intervention suggestions
+  * Shows recommended interventions
+* Corridor geometry available as GeoJSON
 
 ### Backend
 
-* FastAPI
-* MongoDB
-* Corridor data already exists
-* No authentication system
+* No backend changes required for this feature
 
 ---
 
 ## FEATURE OBJECTIVE
 
-Upgrade the corridor panel from:
+Upgrade the right-side corridor panel to include:
 
-> “Here is what the system suggests”
+> **A simple “Before / After” visual illustrating the proposed change**
 
-to:
+This must satisfy the problem statement requirement:
 
-> **“Here is what the system suggests — and what people think.”**
-
-This directly satisfies:
-
-> “Allows users to submit suggestions and vote on proposed corridors”
+> “Shows a simple before-and-after visual or mockup of the proposed change”
 
 ---
 
-## PART 1 — DATA MODEL (BACKEND)
+## PART 1 — VISUAL CONCEPT (MANDATORY RULES)
 
-### 1️⃣ CREATE NEW COLLECTION: `corridor_suggestions`
+### BEFORE VIEW
 
-MongoDB schema (minimal, explicit):
+* Base map only (OSM style)
+* Corridor highlighted using:
 
-```json
-{
-  "_id": "ObjectId",
-  "corridor_id": "string",
-  "text": "string",
-  "upvotes": 0,
-  "created_at": "ISO-8601",
-  "client_ip": "string"
-}
-```
+  * Existing exposure / priority coloring
+* No added greenery
+* Muted colors
 
-Rules:
+### AFTER VIEW
 
-* Suggestions are **always tied to a corridor**
-* Store `client_ip` only for rate limiting (not identity)
-* No usernames, no profiles
+* Same map view
+* Same corridor geometry
+* Add **conceptual green overlays** based on intervention type:
 
-Add indexes:
+  * Icons
+  * Semi-transparent polygons
+* No numerical claims
+* No environmental simulation
 
-* `corridor_id`
-* `created_at`
+⚠️ Both views must be:
 
----
-
-## PART 2 — BACKEND API DESIGN
-
-### 2️⃣ CREATE SUGGESTION ENDPOINTS
-
-#### POST a suggestion
-
-```
-POST /corridors/{id}/suggestions
-```
-
-Request body:
-
-```json
-{
-  "text": "Plant dense trees near the bus stop"
-}
-```
-
-Rules:
-
-* Max length: 300 characters
-* Trim whitespace
-* Reject empty or spam-like content
+* Same zoom
+* Same orientation
+* Same corridor extent
 
 ---
 
-#### GET suggestions for a corridor
+## PART 2 — INTERVENTION → VISUAL MAPPING
+
+Use the corridor’s existing `corridor_type`.
+
+### Heat-dominated corridor
+
+Add:
+
+* Tree icons 🌳 spaced along sidewalks
+* Soft green canopy overlay (30–40% opacity)
+* Optional dashed shaded walkway line
+
+---
+
+### Pollution-dominated corridor
+
+Add:
+
+* Dense green buffer polygons along road edge
+* Vertical green screen icons
+* Clear separation from carriageway
+
+---
+
+### Green-deficit / connectivity corridor
+
+Add:
+
+* Small pocket-green polygons at intervals
+* Light green cycling / walking path overlay
+* Minimal tree icons
+
+---
+
+### Mixed-exposure corridor
+
+Add:
+
+* Combination of trees + buffer elements
+* Keep visuals minimal (avoid clutter)
+
+---
+
+## PART 3 — FRONTEND IMPLEMENTATION
+
+### 1️⃣ ADD “BEFORE / AFTER” TO RIGHT PANEL
+
+In the existing right-side panel, add a new section:
 
 ```
-GET /corridors/{id}/suggestions
+[ Conceptual Corridor Improvement ]
+
+[ BEFORE | AFTER ]   ← toggle buttons
 ```
 
-Returns:
-
-```json
-[
-  {
-    "id": "...",
-    "text": "...",
-    "upvotes": 12,
-    "created_at": "..."
-  }
-]
-```
-
-Sorted by:
-
-1. Upvotes (desc)
-2. Created time (asc)
+* Default state: **Before**
+* Clicking **After** switches the map overlay
 
 ---
 
-#### UPVOTE a suggestion
+### 2️⃣ MAP OVERLAY LOGIC
 
-```
-POST /suggestions/{id}/upvote
-```
+* BEFORE:
 
-Rules:
+  * Show existing corridor styling only
+* AFTER:
 
-* Increment upvotes by 1
-* Apply rate limiting (see below)
+  * Add a new map layer:
 
----
+    * `intervention_overlay`
+  * This layer:
 
-## PART 3 — RATE LIMITING (MANDATORY)
+    * Uses the same corridor geometry
+    * Adds icons / polygons based on corridor type
 
-### 3️⃣ SIMPLE IP-BASED RATE LIMITING
+This must be:
 
-No auth, so do **basic protection**:
-
-#### Limits:
-
-* Suggestion creation:
-
-  * Max **3 per IP per corridor per hour**
-* Upvotes:
-
-  * Max **10 per IP per hour**
-
-Implementation options:
-
-* In-memory store (acceptable for prototype)
-* OR MongoDB `rate_limits` collection
-
-On limit exceeded:
-
-* Return `429 Too Many Requests`
-* Include friendly message
-
-⚠️ Do NOT use Redis unless already present.
+* Purely client-side
+* No API calls
+* No data mutation
 
 ---
 
-## PART 4 — FRONTEND UI (RIGHT PANEL)
+### 3️⃣ ANIMATION REQUIREMENTS
 
-### 4️⃣ EXTEND EXISTING RIGHT PANEL
+* Toggle transition:
 
-Add a new section **below intervention suggestions**:
+  * Fade out old layer (200–300ms)
+  * Fade in new layer (200–300ms)
+* No map jump
+* No zoom change
 
----
-
-### 🗣️ Community Suggestions
-
-#### A. Suggestion Input
-
-* Textarea
-* Placeholder:
-
-  > “Suggest an improvement for this corridor…”
-* Character counter (300 max)
-* Submit button (disabled if empty)
+Animations should feel **subtle and professional**, not flashy.
 
 ---
 
-#### B. Suggestions List
+## PART 4 — LABELING & HONESTY (IMPORTANT)
 
-For each suggestion:
+### Add small caption under the visual:
 
-* Text
-* Upvote button (⬆️)
-* Upvote count
+> **“Conceptual illustration of a proposed green corridor intervention”**
 
-Rules:
+Optional tooltip:
 
-* Disable upvote button after clicking (session-level)
-* Optimistic UI update is OK
+> “This is a visual mockup, not an environmental simulation.”
 
----
-
-### 5️⃣ UI/UX RULES
-
-* Suggestions load when corridor panel opens
-* No page reload
-* Panel scrolls independently
-* If no suggestions:
-
-  > “No community suggestions yet. Be the first.”
+This protects you during judging.
 
 ---
 
-## PART 5 — STATE MANAGEMENT (FRONTEND)
+## PART 5 — UX RULES
 
-Required state additions:
+* Visual must not clutter the panel
+* Icons must scale with zoom
+* Panel scroll must still work
+* Closing the panel:
 
-```ts
-suggestions[]
-isSubmittingSuggestion
-isUpvoting
-```
-
-Rules:
-
-* Suggestions reset when corridor changes
-* Closing the panel clears suggestion state
-* Errors shown inline (small, friendly)
+  * Removes intervention overlay
+  * Restores original corridor styling
 
 ---
 
 ## WHAT NOT TO DO
 
-❌ Do not add user accounts
-❌ Do not add comments on comments
-❌ Do not add moderation workflows
-❌ Do not persist sessions
-❌ Do not over-style the UI
+❌ Do not show temperature reduction
+❌ Do not show AQI improvement
+❌ Do not show 3D renders
+❌ Do not change street layout
+❌ Do not add timelines or costs
 
-This is **participation**, not a social network.
+This is a **visual aid**, not a forecast.
 
 ---
 
@@ -271,39 +227,28 @@ User flow:
 
 1. User clicks a corridor
 2. Right panel opens
-3. Sees:
+3. User sees intervention suggestion
+4. User switches:
 
-   * System-recommended interventions
-   * Community suggestions
-4. User:
+   * BEFORE → AFTER
+5. Map visually shows:
 
-   * Adds a suggestion
-   * Upvotes others
-5. All data persists via MongoDB
-6. System remains clean and fast
+   * What exists
+   * What is proposed
+6. User clearly understands the intent
 
----
-
-## VERIFICATION CHECKLIST
-
-Before marking complete:
-
-* Suggestions tied correctly to corridor IDs
-* Rate limiting works (manual test)
-* Panel UX remains smooth
-* No crashes on repeated clicks
-* Suggestions survive reload
+This completes the problem statement perfectly.
 
 ---
 
 ## FINAL INSTRUCTION
 
-Implement this **cleanly and minimally**.
+Implement this cleanly and minimally.
 
 At the end:
 
 * Add a short README note:
-  **“Community suggestions are advisory and do not affect corridor ranking.”**
+  **“Before–after visuals are conceptual and illustrative.”**
 
 ---
 

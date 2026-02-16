@@ -15,6 +15,10 @@ export default function App() {
     roads: false,
     corridors: true,  // Green corridors - default on
     aqi: false,  // AQI stations layer
+    // OSM overlay layers (translucent)
+    osmRoads: false,     // OSM roads overlay
+    osmParks: false,     // OSM parks/green spaces overlay
+    osmResidential: false, // OSM residential areas overlay
   });
 
   return (

@@ -155,6 +155,29 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 color="#7b3294"
               />
             </div>
+
+            {/* OSM Overlay layers */}
+            <div className="layer-group">
+              <div className="group-label">OSM Overlays</div>
+              <Toggle
+                label="Roads Overlay"
+                checked={activeLayers.osmRoads}
+                onChange={() => toggleLayer('osmRoads')}
+                color="#888888"
+              />
+              <Toggle
+                label="Parks & Green"
+                checked={activeLayers.osmParks}
+                onChange={() => toggleLayer('osmParks')}
+                color="#2d8b2d"
+              />
+              <Toggle
+                label="Residential"
+                checked={activeLayers.osmResidential}
+                onChange={() => toggleLayer('osmResidential')}
+                color="#c4a484"
+              />
+            </div>
           </div>
         )}
       </div>

@@ -403,6 +403,39 @@ export default function Map({ activeLayers, onStatsUpdate }) {
           />
         )}
 
+        {/* OSM Roads Overlay - translucent highway network */}
+        {activeLayers.osmRoads && (
+          <TileLayer
+            url="https://stamen-tiles-{s}.a.ssl.fastly.net/toner-lines/{z}/{x}/{y}{r}.png"
+            opacity={0.35}
+            zIndex={110}
+            className="osm-roads-overlay"
+            attribution='&copy; <a href="http://stamen.com">Stamen</a>'
+          />
+        )}
+
+        {/* OSM Parks Overlay - OpenStreetMap standard with green filter */}
+        {activeLayers.osmParks && (
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            opacity={0.35}
+            zIndex={111}
+            className="osm-parks-overlay"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+          />
+        )}
+
+        {/* OSM Residential Overlay - OpenStreetMap standard with sepia/tan filter */}
+        {activeLayers.osmResidential && (
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            opacity={0.3}
+            zIndex={112}
+            className="osm-residential-overlay"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+          />
+        )}
+
         {/* Roads layer */}
         {activeLayers.roads && roads && (
           <GeoJSON

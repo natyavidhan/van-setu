@@ -5,11 +5,13 @@
  * - Corridor type classification
  * - Recommended green interventions
  * - Human-readable rationale
+ * - Community suggestions (upvotable)
  * 
  * Designed for clarity, not density. No numbers, equations, or jargon.
  */
 import { useEffect, useRef } from 'react';
 import './InterventionPanel.css';
+import CommunitySuggestions from './CommunitySuggestions';
 
 // Intervention icons for visual appeal
 const INTERVENTION_ICONS = {
@@ -55,6 +57,7 @@ export default function InterventionPanel({ corridor, onClose }) {
   const typeIcon = props.corridor_type_icon || '🛤️';
   const typeColor = props.corridor_type_color || '#fc8d59';
   const roadName = props.name || 'Selected Corridor';
+  const corridorId = props.id || corridor.id || null;
   
   return (
     <div className="intervention-panel" ref={panelRef}>
@@ -108,6 +111,11 @@ export default function InterventionPanel({ corridor, onClose }) {
         <h3>Why This Works</h3>
         <p className="rationale-text">{rationale}</p>
       </div>
+      
+      {/* Community Suggestions */}
+      {corridorId && (
+        <CommunitySuggestions corridorId={corridorId} />
+      )}
       
       {/* Footer hint */}
       <div className="panel-footer">

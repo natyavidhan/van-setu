@@ -1,296 +1,267 @@
 # 🧠 MASTER IMPLEMENTATION PROMPT
 
-## **PHASE: INTERVENTION SUGGESTION + CORRIDOR FOCUS UX**
+## **FEATURE: COMMUNITY SUGGESTIONS & UPVOTING (CORRIDOR-LEVEL)**
 
-> **CRITICAL:**
-> This is an incremental UI + logic enhancement.
-> Do NOT rewrite analytics, corridor aggregation, or priority logic.
+> **IMPORTANT:**
+> This feature extends the **existing corridor right-side panel**.
+> Do NOT create a new page or modal.
+> Do NOT introduce authentication.
 
 ---
 
 ## ROLE & EXPECTATION
 
-You are a **senior frontend-heavy full-stack engineer** with experience in:
+You are a **senior full-stack engineer** working on a geospatial planning platform.
 
-* React (Vite)
-* Mapbox GL JS or Leaflet
-* Animated UI interactions
-* GeoJSON-driven UX patterns
+Your task is to add **community participation features** that allow users to:
 
-Your task is to:
+* Submit suggestions for a selected corridor
+* Upvote existing suggestions
+* See community sentiment per corridor
 
-1. **Classify corridors into intervention types** using already-computed exposure metrics
-2. **Suggest appropriate green interventions per corridor**
-3. Upgrade the UX so that:
+This must be:
 
-   * Clicking a corridor zooms to it (animated)
-   * A right-side panel slides in with suggestions
-   * Closing the panel resets the map view (animated)
+* Lightweight
+* Abuse-resistant (basic rate limiting)
+* Easy to remove or expand later
 
 ---
 
-## EXISTING SYSTEM (ASSUME THIS IS TRUE)
-
-### Backend
-
-* Each corridor already has:
-
-```json
-{
-  "corridor_id": "...",
-  "mean_heat": 0.52,
-  "mean_aqi": 0.31,
-  "mean_green_deficit": 0.17,
-  "geometry": "GeoJSON LineString or MultiLineString"
-}
-```
-
-* These values are already exposed via:
-
-```
-GET /corridors
-GET /corridors/{id}
-```
+## EXISTING SYSTEM (ASSUME THIS IS DONE)
 
 ### Frontend
 
-* Map already renders corridors
-* Hovering a corridor shows exposure stats
-* No click interaction yet (or minimal)
+* React (Vite)
+* Map with corridors
+* Clicking a corridor:
+
+  * Zooms map
+  * Opens right-side panel
+  * Shows intervention suggestions
+
+### Backend
+
+* FastAPI
+* MongoDB
+* Corridor data already exists
+* No authentication system
 
 ---
 
-## OBJECTIVE
+## FEATURE OBJECTIVE
 
-Upgrade the system from:
+Upgrade the corridor panel from:
 
-> “Corridors show exposure stats on hover”
+> “Here is what the system suggests”
 
 to:
 
-> **“Click a corridor → focus on it → see what intervention fits and why.”**
+> **“Here is what the system suggests — and what people think.”**
 
-This must feel:
+This directly satisfies:
 
-* Smooth
-* Intuitive
-* Intentional
-* Demo-ready
+> “Allows users to submit suggestions and vote on proposed corridors”
 
 ---
 
-## PART 1 — INTERVENTION CLASSIFICATION LOGIC (BACKEND)
+## PART 1 — DATA MODEL (BACKEND)
 
-### 1️⃣ ADD CORRIDOR TYPE CLASSIFICATION (RULE-BASED)
+### 1️⃣ CREATE NEW COLLECTION: `corridor_suggestions`
 
-Using existing metrics, compute **exposure shares**:
-
-```text
-Total = mean_heat + mean_aqi + mean_green_deficit
-
-heat_share      = mean_heat / Total
-pollution_share = mean_aqi / Total
-green_share     = mean_green_deficit / Total
-```
-
-### Classification rules (deterministic)
-
-* **Heat-dominated**
-
-```text
-heat_share ≥ 0.45
-```
-
-* **Pollution-dominated**
-
-```text
-pollution_share ≥ 0.40
-```
-
-* **Green-deficit / connectivity**
-
-```text
-green_share ≥ 0.35
-```
-
-* Else:
-
-```text
-mixed_exposure
-```
-
----
-
-### 2️⃣ MAP CORRIDOR TYPE → INTERVENTIONS
-
-Add a static mapping table in backend code:
-
-```ts
-heat_dominated → [
-  "Street tree canopy",
-  "Shaded pedestrian walkways"
-]
-
-pollution_dominated → [
-  "Dense vegetation buffers",
-  "Green screens along sidewalks"
-]
-
-green_deficit → [
-  "Pocket green spaces",
-  "Cycle lanes with greening"
-]
-
-mixed_exposure → [
-  "Combined tree planting and shading"
-]
-```
-
----
-
-### 3️⃣ EXTEND CORRIDOR API RESPONSE
-
-Without breaking existing clients, extend corridor response:
+MongoDB schema (minimal, explicit):
 
 ```json
 {
-  "corridor_type": "heat_dominated",
-  "recommended_interventions": [
-    "Street tree canopy",
-    "Shaded pedestrian walkways"
-  ],
-  "intervention_rationale": "Heat exposure dominates along this corridor"
+  "_id": "ObjectId",
+  "corridor_id": "string",
+  "text": "string",
+  "upvotes": 0,
+  "created_at": "ISO-8601",
+  "client_ip": "string"
 }
-```
-
-⚠️ Do NOT remove existing fields.
-
----
-
-## PART 2 — MAP CLICK → ANIMATED ZOOM (FRONTEND)
-
-### 4️⃣ CORRIDOR CLICK BEHAVIOR
-
-When a corridor is clicked:
-
-1. Compute its bounding box from GeoJSON
-2. Animate map view so that:
-
-   * Corridor fits screen
-   * Padding on right side (to account for panel)
-   * Smooth easing (500–800 ms)
-
-Example behavior (conceptual):
-
-```js
-map.fitBounds(bounds, {
-  padding: { top: 40, bottom: 40, left: 40, right: 420 },
-  duration: 700,
-  easing: easeInOut
-})
-```
-
----
-
-### 5️⃣ VISUAL STATE CHANGES
-
-On click:
-
-* Selected corridor:
-
-  * Thicker stroke
-  * Higher opacity
-* Other corridors:
-
-  * Dimmed
-  * Non-interactive
-
-This reinforces focus.
-
----
-
-## PART 3 — RIGHT-SIDE INTERVENTION PANEL
-
-### 6️⃣ PANEL BEHAVIOR
-
-* Panel slides in from the **right**
-* Width ~350–420px
-* Animated entrance (CSS or Framer Motion)
-* Panel content:
-
-  * Corridor title / ID
-  * Corridor type badge
-  * Recommended interventions (1–2 max)
-  * Short rationale text
-
----
-
-### 7️⃣ PANEL CONTENT STRUCTURE
-
-```text
-[ Corridor Selected ]
-
-Type: Heat-Dominated Corridor
-
-Suggested Interventions:
-🌳 Street tree canopy
-☂️ Shaded pedestrian walkways
-
-Why this works:
-This corridor experiences high surface heat exposure with limited shade.
-```
-
-⚠️ No numbers.
-⚠️ No equations.
-⚠️ No jargon.
-
----
-
-### 8️⃣ CLOSE / RESET INTERACTION
-
-Add a **close (✕) button** on the panel.
-
-On close:
-
-1. Panel slides out (animated)
-2. Map animates back to:
-
-   * Previous zoom
-   * Previous center
-3. Corridor highlighting resets
-4. All corridors become visible again
-
-This reset must feel **intentional**, not abrupt.
-
----
-
-## PART 4 — STATE MANAGEMENT (IMPORTANT)
-
-### Required frontend state:
-
-```ts
-selectedCorridorId
-previousMapView
-isPanelOpen
 ```
 
 Rules:
 
-* Only one corridor can be selected at a time
-* Clicking a new corridor replaces the previous one
-* Hover behavior disabled when a corridor is selected
+* Suggestions are **always tied to a corridor**
+* Store `client_ip` only for rate limiting (not identity)
+* No usernames, no profiles
+
+Add indexes:
+
+* `corridor_id`
+* `created_at`
+
+---
+
+## PART 2 — BACKEND API DESIGN
+
+### 2️⃣ CREATE SUGGESTION ENDPOINTS
+
+#### POST a suggestion
+
+```
+POST /corridors/{id}/suggestions
+```
+
+Request body:
+
+```json
+{
+  "text": "Plant dense trees near the bus stop"
+}
+```
+
+Rules:
+
+* Max length: 300 characters
+* Trim whitespace
+* Reject empty or spam-like content
+
+---
+
+#### GET suggestions for a corridor
+
+```
+GET /corridors/{id}/suggestions
+```
+
+Returns:
+
+```json
+[
+  {
+    "id": "...",
+    "text": "...",
+    "upvotes": 12,
+    "created_at": "..."
+  }
+]
+```
+
+Sorted by:
+
+1. Upvotes (desc)
+2. Created time (asc)
+
+---
+
+#### UPVOTE a suggestion
+
+```
+POST /suggestions/{id}/upvote
+```
+
+Rules:
+
+* Increment upvotes by 1
+* Apply rate limiting (see below)
+
+---
+
+## PART 3 — RATE LIMITING (MANDATORY)
+
+### 3️⃣ SIMPLE IP-BASED RATE LIMITING
+
+No auth, so do **basic protection**:
+
+#### Limits:
+
+* Suggestion creation:
+
+  * Max **3 per IP per corridor per hour**
+* Upvotes:
+
+  * Max **10 per IP per hour**
+
+Implementation options:
+
+* In-memory store (acceptable for prototype)
+* OR MongoDB `rate_limits` collection
+
+On limit exceeded:
+
+* Return `429 Too Many Requests`
+* Include friendly message
+
+⚠️ Do NOT use Redis unless already present.
+
+---
+
+## PART 4 — FRONTEND UI (RIGHT PANEL)
+
+### 4️⃣ EXTEND EXISTING RIGHT PANEL
+
+Add a new section **below intervention suggestions**:
+
+---
+
+### 🗣️ Community Suggestions
+
+#### A. Suggestion Input
+
+* Textarea
+* Placeholder:
+
+  > “Suggest an improvement for this corridor…”
+* Character counter (300 max)
+* Submit button (disabled if empty)
+
+---
+
+#### B. Suggestions List
+
+For each suggestion:
+
+* Text
+* Upvote button (⬆️)
+* Upvote count
+
+Rules:
+
+* Disable upvote button after clicking (session-level)
+* Optimistic UI update is OK
+
+---
+
+### 5️⃣ UI/UX RULES
+
+* Suggestions load when corridor panel opens
+* No page reload
+* Panel scrolls independently
+* If no suggestions:
+
+  > “No community suggestions yet. Be the first.”
+
+---
+
+## PART 5 — STATE MANAGEMENT (FRONTEND)
+
+Required state additions:
+
+```ts
+suggestions[]
+isSubmittingSuggestion
+isUpvoting
+```
+
+Rules:
+
+* Suggestions reset when corridor changes
+* Closing the panel clears suggestion state
+* Errors shown inline (small, friendly)
 
 ---
 
 ## WHAT NOT TO DO
 
-❌ Do not re-fetch all data on click
-❌ Do not add new datasets
-❌ Do not compute anything in the frontend
-❌ Do not add charts
-❌ Do not clutter the panel
+❌ Do not add user accounts
+❌ Do not add comments on comments
+❌ Do not add moderation workflows
+❌ Do not persist sessions
+❌ Do not over-style the UI
 
-This is about **clarity, not density**.
+This is **participation**, not a social network.
 
 ---
 
@@ -298,39 +269,42 @@ This is about **clarity, not density**.
 
 User flow:
 
-1. User sees corridors
-2. User clicks one
-3. Map smoothly zooms to it
-4. Right panel slides in
-5. User understands:
+1. User clicks a corridor
+2. Right panel opens
+3. Sees:
 
-   * Why this corridor matters
-   * What type of green intervention fits
-6. User closes panel
-7. Map returns to exploration mode
+   * System-recommended interventions
+   * Community suggestions
+4. User:
 
-This **directly satisfies**:
+   * Adds a suggestion
+   * Upvotes others
+5. All data persists via MongoDB
+6. System remains clean and fast
 
-> “Identifies corridors”
-> “Suggests interventions per route”
-> “Practical, visual planning”
+---
+
+## VERIFICATION CHECKLIST
+
+Before marking complete:
+
+* Suggestions tied correctly to corridor IDs
+* Rate limiting works (manual test)
+* Panel UX remains smooth
+* No crashes on repeated clicks
+* Suggestions survive reload
 
 ---
 
 ## FINAL INSTRUCTION
 
-Implement this cleanly, with:
-
-* Minimal new state
-* Clear animations
-* No breaking changes
+Implement this **cleanly and minimally**.
 
 At the end:
 
-* Comment the classification logic
-* Add a small README note:
-  **“How intervention suggestions are derived”**
+* Add a short README note:
+  **“Community suggestions are advisory and do not affect corridor ranking.”**
 
 ---
 
-## NOW IMPLEMENT THIS PHASE.
+## NOW IMPLEMENT THIS FEATURE.

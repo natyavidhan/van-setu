@@ -89,6 +89,9 @@ npm run dev
 | \`/api/stats\` | GET | Get all statistics |
 | \`/api/stats/{layer}\` | GET | Get layer statistics |
 | \`/api/point?lat=&lng=\` | GET | Query values at point |
+| \`/api/corridors/{id}/suggestions\` | GET | Get community suggestions for a corridor |
+| \`/api/corridors/{id}/suggestions\` | POST | Submit a suggestion for a corridor |
+| \`/api/suggestions/{id}/upvote\` | POST | Upvote a suggestion |
 
 ## Features
 
@@ -97,6 +100,20 @@ npm run dev
 - **Layer Controls**: Toggle visibility of NDVI, LST, GDI, roads, and corridors
 - **Point Query**: Click anywhere to get layer values at that location
 - **Statistics Panel**: Real-time statistics for loaded data
+- **Community Suggestions**: Users can submit and upvote suggestions for corridors
+
+## Community Suggestions
+
+The platform includes a community participation feature that allows users to:
+- Submit suggestions for selected corridors (max 300 characters)
+- Upvote existing suggestions
+- View community sentiment
+
+**Rate Limits** (to prevent abuse):
+- Suggestions: 3 per IP per corridor per hour
+- Upvotes: 10 per IP per hour
+
+> **Note:** Community suggestions are advisory and do not affect corridor ranking.
 
 ## Data Layers
 
@@ -110,9 +127,19 @@ npm run dev
 
 ## Tech Stack
 
-- **Backend**: FastAPI, Rasterio, NumPy, GeoPandas, OSMnx
+- **Backend**: FastAPI, Rasterio, NumPy, GeoPandas, OSMnx, MongoDB (PyMongo)
 - **Frontend**: React, Vite, Leaflet, Axios
 - **Data**: GeoTIFF rasters, OpenStreetMap vectors
+
+## Environment Variables
+
+For community suggestions to work, set up MongoDB:
+
+\`\`\`bash
+# MongoDB connection (defaults to localhost)
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB=urban_green_corridors
+\`\`\`
 
 ## License
 

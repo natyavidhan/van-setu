@@ -96,6 +96,43 @@ export const aqiApi = {
 };
 
 /**
+ * Community Suggestions endpoints
+ * 
+ * Allows users to submit and upvote suggestions for corridors.
+ * Rate limited: 3 suggestions per corridor per hour, 10 upvotes per hour.
+ */
+export const suggestionsApi = {
+  /**
+   * Get all suggestions for a corridor
+   * @param {string} corridorId - The corridor UUID
+   * @returns {Promise} List of suggestions sorted by upvotes
+   */
+  list: (corridorId) => api.get(`/corridors/${corridorId}/suggestions`),
+  
+  /**
+   * Submit a new suggestion for a corridor
+   * @param {string} corridorId - The corridor UUID
+   * @param {string} text - Suggestion text (10-300 characters)
+   * @returns {Promise} Created suggestion
+   */
+  create: (corridorId, text) => api.post(`/corridors/${corridorId}/suggestions`, { text }),
+  
+  /**
+   * Upvote a suggestion
+   * @param {string} suggestionId - The suggestion ID
+   * @returns {Promise} Updated suggestion with new upvote count
+   */
+  upvote: (suggestionId) => api.post(`/suggestions/${suggestionId}/upvote`),
+  
+  /**
+   * Get suggestion statistics for a corridor
+   * @param {string} corridorId - The corridor UUID
+   * @returns {Promise} Suggestion count and total upvotes
+   */
+  stats: (corridorId) => api.get(`/corridors/${corridorId}/suggestions/stats`),
+};
+
+/**
  * Get tile URL template for Leaflet
  */
 export const getTileUrl = (layer) => {

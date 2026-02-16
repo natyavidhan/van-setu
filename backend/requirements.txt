@@ -22,6 +22,9 @@ cachetools>=5.3.0
 # HTTP Client (for AQI API)
 httpx>=0.26.0
 
+# Database (for community suggestions)
+pymongo>=4.6.0
+
 # CORS
 aiofiles>=23.2.0
 

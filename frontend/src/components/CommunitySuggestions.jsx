@@ -3,12 +3,10 @@
  * 
  * Allows users to:
  * - Submit suggestions for a corridor
- * - Upvote existing suggestions
- * - View community sentiment
+ * - View community suggestions
  * 
  * Rate limited:
  * - 3 suggestions per corridor per hour
- * - 10 upvotes per hour
  */
 import { useState, useEffect, useCallback } from 'react';
 import { suggestionsApi } from '../api';
@@ -27,10 +25,6 @@ export default function CommunitySuggestions({ corridorId }) {
   const [inputText, setInputText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
-  
-  // Track upvoted suggestions (session-level)
-  const [upvotedIds, setUpvotedIds] = useState(new Set());
-  const [upvotingId, setUpvotingId] = useState(null);
 
   // Fetch suggestions when corridor changes
   const fetchSuggestions = useCallback(async () => {
@@ -56,7 +50,6 @@ export default function CommunitySuggestions({ corridorId }) {
     // Reset state when corridor changes
     setInputText('');
     setSubmitError(null);
-    setUpvotedIds(new Set());
   }, [corridorId, fetchSuggestions]);
 
   // Handle input change
@@ -92,45 +85,6 @@ export default function CommunitySuggestions({ corridorId }) {
       setSubmitError(message);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // Handle upvote
-  const handleUpvote = async (suggestionId) => {
-    if (upvotedIds.has(suggestionId) || upvotingId) return;
-    
-    setUpvotingId(suggestionId);
-    
-    // Optimistic update
-    setSuggestions(prev => prev.map(s => 
-      s.id === suggestionId 
-        ? { ...s, upvotes: s.upvotes + 1 }
-        : s
-    ));
-    setUpvotedIds(prev => new Set([...prev, suggestionId]));
-    
-    try {
-      await suggestionsApi.upvote(suggestionId);
-    } catch (err) {
-      console.error('Failed to upvote:', err);
-      // Rollback on error
-      setSuggestions(prev => prev.map(s => 
-        s.id === suggestionId 
-          ? { ...s, upvotes: s.upvotes - 1 }
-          : s
-      ));
-      setUpvotedIds(prev => {
-        const next = new Set(prev);
-        next.delete(suggestionId);
-        return next;
-      });
-      
-      // Show brief error
-      const message = err.response?.data?.detail || 'Could not record upvote';
-      setSubmitError(message);
-      setTimeout(() => setSubmitError(null), 3000);
-    } finally {
-      setUpvotingId(null);
     }
   };
 
@@ -192,15 +146,6 @@ export default function CommunitySuggestions({ corridorId }) {
             <div key={suggestion.id} className="suggestion-item">
               <p className="suggestion-text">{suggestion.text}</p>
               <div className="suggestion-footer">
-                <button
-                  className={`upvote-btn ${upvotedIds.has(suggestion.id) ? 'upvoted' : ''}`}
-                  onClick={() => handleUpvote(suggestion.id)}
-                  disabled={upvotedIds.has(suggestion.id) || upvotingId === suggestion.id}
-                  title={upvotedIds.has(suggestion.id) ? 'Already upvoted' : 'Upvote this suggestion'}
-                >
-                  <span className="upvote-arrow">⬆️</span>
-                  <span className="upvote-count">{suggestion.upvotes}</span>
-                </button>
                 <span className="suggestion-time">
                   {formatRelativeTime(suggestion.created_at)}
                 </span>

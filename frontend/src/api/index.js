@@ -98,31 +98,38 @@ export const aqiApi = {
 /**
  * Community Suggestions endpoints
  * 
- * Allows users to submit and upvote suggestions for corridors.
+ * Allows users to submit suggestions and upvote corridors.
  * Rate limited: 3 suggestions per corridor per hour, 10 upvotes per hour.
  */
 export const suggestionsApi = {
   /**
    * Get all suggestions for a corridor
    * @param {string} corridorId - The corridor UUID
-   * @returns {Promise} List of suggestions sorted by upvotes
+   * @returns {Promise} List of suggestions
    */
   list: (corridorId) => api.get(`/corridors/${corridorId}/suggestions`),
   
   /**
    * Submit a new suggestion for a corridor
    * @param {string} corridorId - The corridor UUID
-   * @param {string} text - Suggestion text (10-300 characters)
+   * @param {string} text - Suggestion text (3-300 characters)
    * @returns {Promise} Created suggestion
    */
   create: (corridorId, text) => api.post(`/corridors/${corridorId}/suggestions`, { text }),
   
   /**
-   * Upvote a suggestion
-   * @param {string} suggestionId - The suggestion ID
-   * @returns {Promise} Updated suggestion with new upvote count
+   * Upvote a corridor
+   * @param {string} corridorId - The corridor UUID
+   * @returns {Promise} Updated corridor upvote count
    */
-  upvote: (suggestionId) => api.post(`/suggestions/${suggestionId}/upvote`),
+  upvoteCorridor: (corridorId) => api.post(`/corridors/${corridorId}/upvote`),
+  
+  /**
+   * Get corridor upvote count
+   * @param {string} corridorId - The corridor UUID
+   * @returns {Promise} Corridor upvote count
+   */
+  getCorridorUpvotes: (corridorId) => api.get(`/corridors/${corridorId}/upvotes`),
   
   /**
    * Get suggestion statistics for a corridor

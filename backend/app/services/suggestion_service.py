@@ -349,3 +349,53 @@ class SuggestionService:
         ]
         result = list(self._collection.aggregate(pipeline))
         return result[0]["total"] if result else 0
+
+    def upvote_corridor(self, corridor_id: str, client_ip: str) -> Dict[str, Any]:
+        """
+        Upvote a corridor.
+        
+        Args:
+            corridor_id: The corridor UUID
+            client_ip: Client IP for rate limiting
+            
+        Returns:
+            Updated corridor upvote count
+            
+        Raises:
+            RuntimeError: If rate limited or DB unavailable
+        """
+        if not self.is_connected:
+            raise RuntimeError("Database not available")
+        
+        # Check rate limit (reuse upvote limit)
+        allowed, message = self.rate_limiter.check_upvote_limit(client_ip)
+        if not allowed:
+            raise RuntimeError(message)
+        
+        # Use corridor_upvotes collection
+        upvotes_collection = self._db["corridor_upvotes"]
+        
+        # Upsert the corridor upvote count
+        result = upvotes_collection.find_one_and_update(
+            {"corridor_id": corridor_id},
+            {"$inc": {"upvotes": 1}},
+            upsert=True,
+            return_document=True
+        )
+        
+        # Record for rate limiting
+        self.rate_limiter.record_upvote(client_ip)
+        
+        return {
+            "corridor_id": corridor_id,
+            "upvotes": result.get("upvotes", 1)
+        }
+    
+    def get_corridor_upvotes(self, corridor_id: str) -> int:
+        """Get upvote count for a corridor."""
+        if not self.is_connected:
+            return 0
+        
+        upvotes_collection = self._db["corridor_upvotes"]
+        doc = upvotes_collection.find_one({"corridor_id": corridor_id})
+        return doc.get("upvotes", 0) if doc else 0

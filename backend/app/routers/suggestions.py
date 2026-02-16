@@ -212,3 +212,69 @@ async def get_suggestion_stats(
         "suggestion_count": suggestion_service.get_suggestion_count(corridor_id),
         "total_upvotes": suggestion_service.get_total_upvotes(corridor_id)
     }
+
+
+@router.post(
+    "/corridors/{corridor_id}/upvote",
+    tags=["Community Suggestions"],
+    summary="Upvote a corridor",
+    responses={
+        200: {"description": "Upvote recorded"},
+        429: {"description": "Rate limit exceeded"},
+        503: {"description": "Database unavailable"}
+    }
+)
+async def upvote_corridor(
+    corridor_id: str,
+    request: Request,
+    suggestion_service: SuggestionService = Depends(get_suggestion_service)
+) -> Dict[str, Any]:
+    """
+    Upvote a corridor to show community support.
+    
+    Rate limited to 10 upvotes per IP per hour.
+    
+    Args:
+        corridor_id: The corridor UUID
+        
+    Returns:
+        Updated corridor upvote count
+    """
+    client_ip = get_client_ip(request)
+    
+    try:
+        result = suggestion_service.upvote_corridor(
+            corridor_id=corridor_id,
+            client_ip=client_ip
+        )
+        return result
+        
+    except RuntimeError as e:
+        error_msg = str(e)
+        if "Rate limit" in error_msg:
+            raise HTTPException(status_code=429, detail=error_msg)
+        raise HTTPException(status_code=503, detail=error_msg)
+
+
+@router.get(
+    "/corridors/{corridor_id}/upvotes",
+    tags=["Community Suggestions"],
+    summary="Get corridor upvote count"
+)
+async def get_corridor_upvotes(
+    corridor_id: str,
+    suggestion_service: SuggestionService = Depends(get_suggestion_service)
+) -> Dict[str, Any]:
+    """
+    Get the upvote count for a corridor.
+    
+    Args:
+        corridor_id: The corridor UUID
+        
+    Returns:
+        Corridor upvote count
+    """
+    return {
+        "corridor_id": corridor_id,
+        "upvotes": suggestion_service.get_corridor_upvotes(corridor_id)
+    }

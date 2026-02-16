@@ -5,13 +5,15 @@
  * - Corridor type classification
  * - Recommended green interventions
  * - Human-readable rationale
- * - Community suggestions (upvotable)
+ * - Upvote button for community support
+ * - Community suggestions
  * 
  * Designed for clarity, not density. No numbers, equations, or jargon.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './InterventionPanel.css';
 import CommunitySuggestions from './CommunitySuggestions';
+import { suggestionsApi } from '../api';
 
 // Intervention icons for visual appeal
 const INTERVENTION_ICONS = {
@@ -36,6 +38,14 @@ const TYPE_LABELS = {
 export default function InterventionPanel({ corridor, onClose }) {
   const panelRef = useRef(null);
   
+  // Upvote state
+  const [upvotes, setUpvotes] = useState(0);
+  const [hasUpvoted, setHasUpvoted] = useState(false);
+  const [isUpvoting, setIsUpvoting] = useState(false);
+  
+  const props = corridor?.properties || {};
+  const corridorId = props.id || corridor?.id || null;
+  
   // Focus trap and escape key handler
   useEffect(() => {
     const handleEscape = (e) => {
@@ -48,16 +58,48 @@ export default function InterventionPanel({ corridor, onClose }) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
   
+  // Fetch upvotes when corridor changes
+  useEffect(() => {
+    if (!corridorId) return;
+    
+    setHasUpvoted(false);
+    setUpvotes(0);
+    
+    suggestionsApi.getCorridorUpvotes(corridorId)
+      .then(res => setUpvotes(res.data.upvotes || 0))
+      .catch(err => console.error('Failed to fetch upvotes:', err));
+  }, [corridorId]);
+  
+  // Handle upvote
+  const handleUpvote = async () => {
+    if (hasUpvoted || isUpvoting || !corridorId) return;
+    
+    setIsUpvoting(true);
+    // Optimistic update
+    setUpvotes(prev => prev + 1);
+    setHasUpvoted(true);
+    
+    try {
+      const res = await suggestionsApi.upvoteCorridor(corridorId);
+      setUpvotes(res.data.upvotes);
+    } catch (err) {
+      console.error('Failed to upvote:', err);
+      // Rollback
+      setUpvotes(prev => prev - 1);
+      setHasUpvoted(false);
+    } finally {
+      setIsUpvoting(false);
+    }
+  };
+  
   if (!corridor) return null;
   
-  const props = corridor.properties || {};
   const corridorType = props.corridor_type || 'mixed_exposure';
   const interventions = props.recommended_interventions || [];
   const rationale = props.intervention_rationale || '';
   const typeIcon = props.corridor_type_icon || '🛤️';
   const typeColor = props.corridor_type_color || '#fc8d59';
   const roadName = props.name || 'Selected Corridor';
-  const corridorId = props.id || corridor.id || null;
   
   return (
     <div className="intervention-panel" ref={panelRef}>
@@ -79,6 +121,22 @@ export default function InterventionPanel({ corridor, onClose }) {
           <h2>{roadName}</h2>
           <span className="panel-subtitle">Corridor Selected</span>
         </div>
+      </div>
+      
+      {/* Upvote Button for Corridor */}
+      <div className="corridor-upvote-section">
+        <button
+          className={`corridor-upvote-btn ${hasUpvoted ? 'upvoted' : ''}`}
+          onClick={handleUpvote}
+          disabled={hasUpvoted || isUpvoting}
+          title={hasUpvoted ? 'You supported this corridor' : 'Support this corridor'}
+        >
+          <span className="upvote-icon">👍</span>
+          <span className="upvote-text">
+            {hasUpvoted ? 'Supported' : 'Support This Corridor'}
+          </span>
+          <span className="upvote-count">{upvotes}</span>
+        </button>
       </div>
       
       {/* Type Badge */}

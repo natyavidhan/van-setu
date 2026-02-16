@@ -1,13 +1,16 @@
 /**
  * Map Component — Main Leaflet map with layer controls
  * 
- * Updated to support AQI visualization and Multi-Exposure Priority scoring.
+ * Updated to support AQI visualization, Multi-Exposure Priority scoring,
+ * and Corridor Intervention panel with animated focus.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap, useMapEvents, CircleMarker, Popup, Tooltip } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getTileUrl, roadsApi, statsApi, aqiApi } from '../api';
 import './Map.css';
+import InterventionPanel from './InterventionPanel';
 
 // Delhi NCT center and bounds
 const DELHI_CENTER = [28.6139, 77.209];
@@ -19,14 +22,70 @@ const DELHI_BOUNDS = [
 /**
  * Custom hook for click-to-query functionality
  */
-function ClickHandler({ onPointQuery }) {
+function ClickHandler({ onPointQuery, disabled }) {
   useMapEvents({
     click: (e) => {
-      if (onPointQuery) {
+      if (onPointQuery && !disabled) {
         onPointQuery(e.latlng.lat, e.latlng.lng);
       }
     },
   });
+  return null;
+}
+
+/**
+ * Map controller for programmatic map interactions (zoom, pan)
+ */
+function MapController({ selectedCorridor, previousView, onViewSaved }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (selectedCorridor && selectedCorridor.geometry) {
+      // Save current view before zooming
+      if (!previousView.current) {
+        previousView.current = {
+          center: map.getCenter(),
+          zoom: map.getZoom()
+        };
+        onViewSaved();
+      }
+      
+      // Create bounds from the corridor geometry
+      const coords = selectedCorridor.geometry.coordinates;
+      const latLngs = coords.map(coord => [coord[1], coord[0]]);
+      const bounds = L.latLngBounds(latLngs);
+      
+      // Animated zoom to corridor with padding for the panel
+      map.fitBounds(bounds, {
+        padding: [50, 420], // Extra padding on right for panel
+        maxZoom: 15,
+        animate: true,
+        duration: 0.6
+      });
+    }
+  }, [selectedCorridor, map, previousView, onViewSaved]);
+  
+  return null;
+}
+
+/**
+ * Restore map view when panel is closed
+ */
+function MapViewRestorer({ shouldRestore, previousView, onRestored }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (shouldRestore && previousView.current) {
+      map.setView(
+        previousView.current.center,
+        previousView.current.zoom,
+        { animate: true, duration: 0.5 }
+      );
+      previousView.current = null;
+      onRestored();
+    }
+  }, [shouldRestore, map, previousView, onRestored]);
+  
   return null;
 }
 
@@ -178,6 +237,12 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   
   // State for corridor hover highlighting
   const [hoveredCorridor, setHoveredCorridor] = useState(null);
+  
+  // State for corridor selection and intervention panel
+  const [selectedCorridor, setSelectedCorridor] = useState(null);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [shouldRestoreView, setShouldRestoreView] = useState(false);
+  const previousViewRef = useRef(null);
 
   // Determine which raster layer is active (only one at a time for clarity)
   const activeRaster = activeLayers.gdi ? 'gdi' : activeLayers.lst ? 'lst' : activeLayers.ndvi ? 'ndvi' : null;
@@ -227,17 +292,46 @@ export default function Map({ activeLayers, onStatsUpdate }) {
 
   // Style for corridors (high priority = red)
   // Now uses priority_score (multi-exposure) instead of just GDI
-  // Supports hover highlighting
+  // Supports hover highlighting and selection state
   const corridorStyle = useCallback((feature) => {
     const priority = feature.properties?.priority_score ?? feature.properties?.gdi_mean ?? 0.5;
     const featureId = feature.properties?.name || feature.id || JSON.stringify(feature.geometry?.coordinates?.[0]);
     const isHovered = hoveredCorridor === featureId;
+    const isSelected = selectedCorridor?.properties?.name === feature.properties?.name;
+    const hasSelection = selectedCorridor !== null;
     
-    // Color based on priority
+    // Color based on priority or corridor type
     let color;
-    if (priority > 0.7) color = '#d73027';      // Critical - dark red
+    const corridorType = feature.properties?.corridor_type;
+    if (corridorType === 'heat_dominated') color = '#d73027';
+    else if (corridorType === 'pollution_dominated') color = '#984ea3';
+    else if (corridorType === 'green_deficit') color = '#fc8d59';
+    else if (corridorType === 'mixed_exposure') color = '#ff7f00';
+    else if (priority > 0.7) color = '#d73027';      // Critical - dark red
     else if (priority > 0.5) color = '#fc8d59'; // High - orange
     else color = '#fee08b';                     // Moderate - yellow
+    
+    // If a corridor is selected, dim others
+    if (hasSelection && !isSelected) {
+      return {
+        color: '#666',
+        weight: 2,
+        opacity: 0.3,
+        lineCap: 'round',
+        lineJoin: 'round',
+      };
+    }
+    
+    // Selected corridor gets emphasized styling
+    if (isSelected) {
+      return {
+        color: '#00ffff',
+        weight: 8,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round',
+      };
+    }
     
     return {
       color: isHovered ? '#00ffff' : color,
@@ -246,7 +340,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
       lineCap: 'round',
       lineJoin: 'round',
     };
-  }, [hoveredCorridor]);
+  }, [hoveredCorridor, selectedCorridor]);
 
   // Style for roads (subtle gray)
   const roadStyle = {
@@ -321,7 +415,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
         {/* Corridors layer - with hover highlighting and tooltips */}
         {activeLayers.corridors && corridors && (
           <GeoJSON
-            key={`corridors-${hoveredCorridor || 'none'}`}
+            key={`corridors-${hoveredCorridor || 'none'}-${selectedCorridor?.properties?.name || 'none'}`}
             data={corridors}
             style={corridorStyle}
             onEachFeature={(feature, layer) => {
@@ -339,67 +433,83 @@ export default function Map({ activeLayers, onStatsUpdate }) {
                 const priorityColor = priority > 0.7 ? '#d73027' : priority > 0.5 ? '#fc8d59' : '#91cf60';
                 const priorityLabel = priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate';
                 
-                // Bind tooltip for hover display
-                layer.bindTooltip(`
-                  <div class="corridor-tooltip">
-                    <div class="tooltip-header">
-                      <span class="tooltip-icon">🛤️</span>
-                      <span class="tooltip-title">${roadName}</span>
-                      <span class="tooltip-priority" style="background: ${priorityColor}">${priorityLabel}</span>
-                    </div>
-                    <div class="tooltip-stats">
-                      <div class="tooltip-stat">
-                        <span class="stat-icon">📊</span>
-                        <span class="stat-value">${priority?.toFixed(2) || '—'}</span>
-                        <span class="stat-label">priority</span>
+                // Only show tooltip if no corridor is selected
+                if (!selectedCorridor) {
+                  // Bind tooltip for hover display
+                  layer.bindTooltip(`
+                    <div class="corridor-tooltip">
+                      <div class="tooltip-header">
+                        <span class="tooltip-icon">🛤️</span>
+                        <span class="tooltip-title">${roadName}</span>
+                        <span class="tooltip-priority" style="background: ${priorityColor}">${priorityLabel}</span>
                       </div>
-                      ${aqi ? `
-                      <div class="tooltip-stat">
-                        <span class="stat-icon">💨</span>
-                        <span class="stat-value">${Math.round(aqi)}</span>
-                        <span class="stat-label">PM2.5</span>
+                      <div class="tooltip-stats">
+                        <div class="tooltip-stat">
+                          <span class="stat-icon">📊</span>
+                          <span class="stat-value">${priority?.toFixed(2) || '—'}</span>
+                          <span class="stat-label">priority</span>
+                        </div>
+                        ${aqi ? `
+                        <div class="tooltip-stat">
+                          <span class="stat-icon">💨</span>
+                          <span class="stat-value">${Math.round(aqi)}</span>
+                          <span class="stat-label">PM2.5</span>
+                        </div>
+                        ` : ''}
                       </div>
-                      ` : ''}
+                      <div class="tooltip-bars">
+                        ${heat != null ? `
+                          <div class="tooltip-bar">
+                            <span class="bar-icon">🌡️</span>
+                            <div class="bar-track"><div class="bar-fill heat" style="width: ${heat * 100}%"></div></div>
+                            <span class="bar-pct">${(heat * 100).toFixed(0)}%</span>
+                          </div>
+                        ` : ''}
+                        ${ndvi != null ? `
+                          <div class="tooltip-bar">
+                            <span class="bar-icon">🌿</span>
+                            <div class="bar-track"><div class="bar-fill green" style="width: ${ndvi * 100}%"></div></div>
+                            <span class="bar-pct">${(ndvi * 100).toFixed(0)}%</span>
+                          </div>
+                        ` : ''}
+                        ${aqiNorm != null ? `
+                          <div class="tooltip-bar">
+                            <span class="bar-icon">💨</span>
+                            <div class="bar-track"><div class="bar-fill aqi" style="width: ${aqiNorm * 100}%"></div></div>
+                            <span class="bar-pct">${(aqiNorm * 100).toFixed(0)}%</span>
+                          </div>
+                        ` : ''}
+                      </div>
+                      <div class="tooltip-hint">Click for intervention suggestions</div>
                     </div>
-                    <div class="tooltip-bars">
-                      ${heat != null ? `
-                        <div class="tooltip-bar">
-                          <span class="bar-icon">🌡️</span>
-                          <div class="bar-track"><div class="bar-fill heat" style="width: ${heat * 100}%"></div></div>
-                          <span class="bar-pct">${(heat * 100).toFixed(0)}%</span>
-                        </div>
-                      ` : ''}
-                      ${ndvi != null ? `
-                        <div class="tooltip-bar">
-                          <span class="bar-icon">🌿</span>
-                          <div class="bar-track"><div class="bar-fill green" style="width: ${ndvi * 100}%"></div></div>
-                          <span class="bar-pct">${(ndvi * 100).toFixed(0)}%</span>
-                        </div>
-                      ` : ''}
-                      ${aqiNorm != null ? `
-                        <div class="tooltip-bar">
-                          <span class="bar-icon">💨</span>
-                          <div class="bar-track"><div class="bar-fill aqi" style="width: ${aqiNorm * 100}%"></div></div>
-                          <span class="bar-pct">${(aqiNorm * 100).toFixed(0)}%</span>
-                        </div>
-                      ` : ''}
-                    </div>
-                  </div>
-                `, {
-                  sticky: true,
-                  direction: 'top',
-                  offset: [0, -10],
-                  className: 'corridor-tooltip-container'
+                  `, {
+                    sticky: true,
+                    direction: 'top',
+                    offset: [0, -10],
+                    className: 'corridor-tooltip-container'
+                  });
+                }
+                
+                // Click handler to select corridor and open panel
+                layer.on('click', (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  setSelectedCorridor(feature);
+                  setIsPanelOpen(true);
+                  setHoveredCorridor(null);
                 });
                 
-                // Hover events for highlighting
+                // Hover events for highlighting (only when no selection)
                 layer.on('mouseover', () => {
-                  setHoveredCorridor(featureId);
-                  layer.bringToFront();
+                  if (!selectedCorridor) {
+                    setHoveredCorridor(featureId);
+                    layer.bringToFront();
+                  }
                 });
                 
                 layer.on('mouseout', () => {
-                  setHoveredCorridor(null);
+                  if (!selectedCorridor) {
+                    setHoveredCorridor(null);
+                  }
                 });
               }
             }}
@@ -440,7 +550,21 @@ export default function Map({ activeLayers, onStatsUpdate }) {
         )}
 
         {/* Click handler for point queries */}
-        <ClickHandler onPointQuery={handlePointQuery} />
+        <ClickHandler onPointQuery={handlePointQuery} disabled={isPanelOpen} />
+        
+        {/* Map controller for animated zoom to selected corridor */}
+        <MapController 
+          selectedCorridor={selectedCorridor}
+          previousView={previousViewRef}
+          onViewSaved={() => {}}
+        />
+        
+        {/* Map view restorer when panel closes */}
+        <MapViewRestorer 
+          shouldRestore={shouldRestoreView}
+          previousView={previousViewRef}
+          onRestored={() => setShouldRestoreView(false)}
+        />
       </MapContainer>
 
       {/* Legend */}
@@ -456,6 +580,18 @@ export default function Map({ activeLayers, onStatsUpdate }) {
         <div className="loading-indicator">
           Loading {loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...
         </div>
+      )}
+      
+      {/* Intervention Panel - slides in from right when corridor is selected */}
+      {isPanelOpen && selectedCorridor && (
+        <InterventionPanel 
+          corridor={selectedCorridor}
+          onClose={() => {
+            setIsPanelOpen(false);
+            setSelectedCorridor(null);
+            setShouldRestoreView(true);
+          }}
+        />
       )}
     </div>
   );

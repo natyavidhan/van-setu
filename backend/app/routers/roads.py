@@ -2,6 +2,7 @@
 Roads Router — Road network and corridor endpoints.
 
 Updated to support Multi-Exposure Priority scoring with AQI integration.
+Includes intervention classification for corridor planning.
 """
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from typing import Dict, Any
@@ -10,6 +11,7 @@ from app.dependencies import get_raster_service, get_road_service, get_aqi_servi
 from app.services.raster_service import RasterService
 from app.services.road_service import RoadService
 from app.services.aqi_service import AQIService
+from app.services.intervention_service import enrich_geojson_corridors
 
 router = APIRouter()
 
@@ -90,16 +92,21 @@ async def get_corridors(
     aqi_service: AQIService = Depends(get_aqi_service)
 ) -> Dict[str, Any]:
     """
-    Get high-priority green corridors as GeoJSON.
+    Get high-priority green corridors as GeoJSON with intervention suggestions.
     
     When include_aqi=true (default), corridors are ranked by Multi-Exposure Priority:
         Priority = 0.45 × Heat + 0.35 × Green Deficit + 0.20 × AQI
+    
+    Each corridor includes:
+    - corridor_type: Classification (heat_dominated, pollution_dominated, green_deficit, mixed_exposure)
+    - recommended_interventions: List of suggested green infrastructure interventions
+    - intervention_rationale: Human-readable explanation of why these interventions fit
     
     Args:
         percentile: Percentile threshold (default 85 = top 15%)
         include_aqi: Use AQI in priority scoring (default true)
         
-    Returns GeoJSON with corridor segments and full priority breakdown.
+    Returns GeoJSON with corridor segments, priority breakdown, and intervention suggestions.
     """
     try:
         if include_aqi:
@@ -111,14 +118,18 @@ async def get_corridors(
         
         geojson = road_service.roads_to_geojson(corridors)
         
+        # Enrich corridors with intervention classification and suggestions
+        enriched_geojson = enrich_geojson_corridors(geojson)
+        
         return {
             "type": "FeatureCollection",
-            "features": geojson.get("features", []),
+            "features": enriched_geojson.get("features", []),
             "metadata": {
-                "count": len(geojson.get("features", [])),
+                "count": len(enriched_geojson.get("features", [])),
                 "percentile_threshold": percentile,
                 "scoring_method": scoring_method,
-                "description": f"Top {100-percentile:.0f}% highest priority road segments"
+                "description": f"Top {100-percentile:.0f}% highest priority road segments",
+                "includes_interventions": True
             }
         }
     except Exception as e:

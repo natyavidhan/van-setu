@@ -1,329 +1,336 @@
-# 🧠 MASTER IMPLEMENTATION PROMPT — **POINT-BASED CORRIDOR AGGREGATION**
+# 🧠 MASTER IMPLEMENTATION PROMPT
 
-> **IMPORTANT:**
-> This is an extension of an existing system.
-> Do **not** recompute priority, exposure, AQI, NDVI, or LST.
-> Treat existing high-priority points as **ground truth**.
+## **PHASE: INTERVENTION SUGGESTION + CORRIDOR FOCUS UX**
+
+> **CRITICAL:**
+> This is an incremental UI + logic enhancement.
+> Do NOT rewrite analytics, corridor aggregation, or priority logic.
 
 ---
 
 ## ROLE & EXPECTATION
 
-You are a **senior geospatial engineer** extending an existing FastAPI + React (Vite) application.
+You are a **senior frontend-heavy full-stack engineer** with experience in:
 
-Your task is to create a **corridor aggregation feature** that:
+* React (Vite)
+* Mapbox GL JS or Leaflet
+* Animated UI interactions
+* GeoJSON-driven UX patterns
 
-* Takes **existing high-priority points** as input
-* Connects **spatially continuous points** into **corridors**
-* Preserves **all original points**
-* Adds a **new corridor abstraction layer** on top
+Your task is to:
 
-This phase is **pure geometry + topology**, not analytics.
+1. **Classify corridors into intervention types** using already-computed exposure metrics
+2. **Suggest appropriate green interventions per corridor**
+3. Upgrade the UX so that:
+
+   * Clicking a corridor zooms to it (animated)
+   * A right-side panel slides in with suggestions
+   * Closing the panel resets the map view (animated)
 
 ---
 
-## CURRENT SYSTEM (ASSUME THIS EXISTS)
+## EXISTING SYSTEM (ASSUME THIS IS TRUE)
 
 ### Backend
 
-* FastAPI
-* MongoDB
-* A collection of **high-priority points**, each with:
-
-  * Geometry (Point)
-  * Priority score
-  * AQI / heat / NDVI metadata
-* API already returns these points
-
-### Frontend
-
-* React (Vite)
-* Map UI showing:
-
-  * Individual high-priority points
-  * Color-coded by priority
-* Points render correctly and are trusted
-
----
-
-## OBJECTIVE OF THIS PHASE
-
-Upgrade the system from:
-
-> “These are isolated high-priority locations”
-
-to:
-
-> **“These points form continuous exposure corridors.”**
-
-A **corridor** is defined as:
-
-* A connected chain of nearby high-priority points
-* Representing a continuous path of human exposure
-* Derived *without losing or modifying point-level data*
-
----
-
-## CORE DESIGN PRINCIPLES (MANDATORY)
-
-* ❌ Do NOT delete points
-* ❌ Do NOT merge points
-* ❌ Do NOT change priority scores
-* ✅ Corridors reference points, not replace them
-* ✅ Points may belong to **only one corridor**
-* ✅ Corridors are deterministic and reproducible
-
----
-
-## BACKEND TASKS (STEP BY STEP)
-
----
-
-### 1️⃣ INPUT: EXISTING HIGH-PRIORITY POINTS
-
-Use the existing collection:
+* Each corridor already has:
 
 ```json
 {
-  "point_id": "...",
-  "geometry": { "type": "Point", "coordinates": [...] },
-  "priority_score": 0.87,
-  "aqi": 0.74,
-  "heat": 0.81,
-  "ndvi": 0.19
+  "corridor_id": "...",
+  "mean_heat": 0.52,
+  "mean_aqi": 0.31,
+  "mean_green_deficit": 0.17,
+  "geometry": "GeoJSON LineString or MultiLineString"
 }
 ```
 
-No filtering or recomputation allowed in this phase.
-
----
-
-### 2️⃣ DEFINE CONNECTIVITY RULE (VERY IMPORTANT)
-
-Two points **A** and **B** are considered connected if:
-
-* Distance(A, B) ≤ `D_max`
-
-Recommended default:
-
-```
-D_max = 30 meters
-```
-
-Justification:
-
-* Matches street-scale continuity
-* Avoids jumping across blocks
-* Supported by walkability & exposure literature
-
-Make `D_max` configurable.
-
----
-
-### 3️⃣ BUILD POINT CONNECTIVITY GRAPH
-
-Algorithm:
-
-* Treat each point as a node
-* Add an edge between nodes if:
-
-  * Distance ≤ D_max
-* Use:
-
-  * KD-tree / BallTree
-  * OR spatial index (Shapely STRtree)
-
-⚠️ This graph includes **only existing points**.
-
----
-
-### 4️⃣ EXTRACT CONNECTED COMPONENTS → CORRIDORS
-
-* Find **connected components** in the graph
-* Each connected component = **one corridor**
-
-This guarantees:
-
-* No point is lost
-* No point appears in two corridors
-* Corridors emerge naturally from spatial continuity
-
----
-
-### 5️⃣ FILTER TRIVIAL CORRIDORS (OPTIONAL BUT RECOMMENDED)
-
-To reduce noise:
-
-* Discard corridors with:
-
-  * Fewer than `N_min` points (e.g. < 5)
-* These points remain visible individually
-* They simply don’t form a corridor
-
-This preserves data while improving signal clarity.
-
----
-
-### 6️⃣ COMPUTE CORRIDOR METADATA (DERIVED ONLY)
-
-For each corridor:
-
-* Corridor ID (UUID)
-* List of point IDs
-* Convex hull OR ordered polyline (for visualization)
-* Mean priority score
-* Mean AQI / heat / NDVI
-* Approximate corridor length (sum of inter-point distances)
-
-⚠️ Do NOT modify underlying point records.
-
----
-
-### 7️⃣ STORE CORRIDORS (NEW COLLECTION)
-
-Create a new MongoDB collection: `corridors`
-
-Example:
-
-```json
-{
-  "corridor_id": "uuid",
-  "point_ids": [...],
-  "geometry": "LineString or MultiPoint",
-  "mean_priority": 0.83,
-  "mean_aqi": 0.71,
-  "num_points": 18,
-  "created_at": "ISO-8601"
-}
-```
-
-Points remain stored separately.
-
----
-
-### 8️⃣ BACKEND API (NEW, READ-ONLY)
-
-Add new endpoints **without modifying existing ones**:
+* These values are already exposed via:
 
 ```
 GET /corridors
-```
-
-Returns:
-
-* corridor_id
-* geometry
-* mean_priority
-* num_points
-
-```
 GET /corridors/{id}
 ```
 
-Returns:
+### Frontend
 
-* full metadata
-* list of point IDs
-* linked point details (optional)
-
----
-
-## FRONTEND TASKS (STEP BY STEP)
+* Map already renders corridors
+* Hovering a corridor shows exposure stats
+* No click interaction yet (or minimal)
 
 ---
 
-### 9️⃣ CORRIDOR VISUALIZATION LAYER
+## OBJECTIVE
 
-Add a new toggle:
+Upgrade the system from:
 
-> **“High-Exposure Corridors”**
+> “Corridors show exposure stats on hover”
 
-Behavior:
+to:
 
-* Draw corridors as lines connecting points
-* Thickness > points
-* Color by mean priority
-* Points remain visible underneath
+> **“Click a corridor → focus on it → see what intervention fits and why.”**
 
----
+This must feel:
 
-### 🔟 INTERACTION BEHAVIOR
-
-On corridor click:
-
-* Highlight corridor
-* Highlight constituent points
-* Show corridor summary:
-
-  * Number of points
-  * Avg exposure
-  * Dominant exposure type
-
-Points should still be clickable individually.
+* Smooth
+* Intuitive
+* Intentional
+* Demo-ready
 
 ---
 
-## OPTIONAL IMPROVEMENTS (SAFE IDEAS)
+## PART 1 — INTERVENTION CLASSIFICATION LOGIC (BACKEND)
 
-If needed, you MAY:
+### 1️⃣ ADD CORRIDOR TYPE CLASSIFICATION (RULE-BASED)
 
-* Order points along the corridor using nearest-neighbor chaining
-* Smooth the line visually (for UI only)
-* Add a “corridor confidence” score based on point density
+Using existing metrics, compute **exposure shares**:
 
-These are **visual improvements only**, not analytics.
+```text
+Total = mean_heat + mean_aqi + mean_green_deficit
+
+heat_share      = mean_heat / Total
+pollution_share = mean_aqi / Total
+green_share     = mean_green_deficit / Total
+```
+
+### Classification rules (deterministic)
+
+* **Heat-dominated**
+
+```text
+heat_share ≥ 0.45
+```
+
+* **Pollution-dominated**
+
+```text
+pollution_share ≥ 0.40
+```
+
+* **Green-deficit / connectivity**
+
+```text
+green_share ≥ 0.35
+```
+
+* Else:
+
+```text
+mixed_exposure
+```
 
 ---
 
-## WHAT NOT TO DO (CRITICAL)
+### 2️⃣ MAP CORRIDOR TYPE → INTERVENTIONS
 
-❌ Do not introduce road segments
-❌ Do not recalculate exposure
-❌ Do not cluster by priority value
-❌ Do not merge or average points
-❌ Do not delete orphan points
+Add a static mapping table in backend code:
 
-This phase is **connecting dots**, not redefining them.
+```ts
+heat_dominated → [
+  "Street tree canopy",
+  "Shaded pedestrian walkways"
+]
+
+pollution_dominated → [
+  "Dense vegetation buffers",
+  "Green screens along sidewalks"
+]
+
+green_deficit → [
+  "Pocket green spaces",
+  "Cycle lanes with greening"
+]
+
+mixed_exposure → [
+  "Combined tree planting and shading"
+]
+```
+
+---
+
+### 3️⃣ EXTEND CORRIDOR API RESPONSE
+
+Without breaking existing clients, extend corridor response:
+
+```json
+{
+  "corridor_type": "heat_dominated",
+  "recommended_interventions": [
+    "Street tree canopy",
+    "Shaded pedestrian walkways"
+  ],
+  "intervention_rationale": "Heat exposure dominates along this corridor"
+}
+```
+
+⚠️ Do NOT remove existing fields.
+
+---
+
+## PART 2 — MAP CLICK → ANIMATED ZOOM (FRONTEND)
+
+### 4️⃣ CORRIDOR CLICK BEHAVIOR
+
+When a corridor is clicked:
+
+1. Compute its bounding box from GeoJSON
+2. Animate map view so that:
+
+   * Corridor fits screen
+   * Padding on right side (to account for panel)
+   * Smooth easing (500–800 ms)
+
+Example behavior (conceptual):
+
+```js
+map.fitBounds(bounds, {
+  padding: { top: 40, bottom: 40, left: 40, right: 420 },
+  duration: 700,
+  easing: easeInOut
+})
+```
+
+---
+
+### 5️⃣ VISUAL STATE CHANGES
+
+On click:
+
+* Selected corridor:
+
+  * Thicker stroke
+  * Higher opacity
+* Other corridors:
+
+  * Dimmed
+  * Non-interactive
+
+This reinforces focus.
+
+---
+
+## PART 3 — RIGHT-SIDE INTERVENTION PANEL
+
+### 6️⃣ PANEL BEHAVIOR
+
+* Panel slides in from the **right**
+* Width ~350–420px
+* Animated entrance (CSS or Framer Motion)
+* Panel content:
+
+  * Corridor title / ID
+  * Corridor type badge
+  * Recommended interventions (1–2 max)
+  * Short rationale text
+
+---
+
+### 7️⃣ PANEL CONTENT STRUCTURE
+
+```text
+[ Corridor Selected ]
+
+Type: Heat-Dominated Corridor
+
+Suggested Interventions:
+🌳 Street tree canopy
+☂️ Shaded pedestrian walkways
+
+Why this works:
+This corridor experiences high surface heat exposure with limited shade.
+```
+
+⚠️ No numbers.
+⚠️ No equations.
+⚠️ No jargon.
+
+---
+
+### 8️⃣ CLOSE / RESET INTERACTION
+
+Add a **close (✕) button** on the panel.
+
+On close:
+
+1. Panel slides out (animated)
+2. Map animates back to:
+
+   * Previous zoom
+   * Previous center
+3. Corridor highlighting resets
+4. All corridors become visible again
+
+This reset must feel **intentional**, not abrupt.
+
+---
+
+## PART 4 — STATE MANAGEMENT (IMPORTANT)
+
+### Required frontend state:
+
+```ts
+selectedCorridorId
+previousMapView
+isPanelOpen
+```
+
+Rules:
+
+* Only one corridor can be selected at a time
+* Clicking a new corridor replaces the previous one
+* Hover behavior disabled when a corridor is selected
+
+---
+
+## WHAT NOT TO DO
+
+❌ Do not re-fetch all data on click
+❌ Do not add new datasets
+❌ Do not compute anything in the frontend
+❌ Do not add charts
+❌ Do not clutter the panel
+
+This is about **clarity, not density**.
 
 ---
 
 ## EXPECTED END STATE
 
-After implementation:
+User flow:
 
-* All original points still exist
-* Corridors appear naturally from spatial proximity
-* Map clearly shows:
+1. User sees corridors
+2. User clicks one
+3. Map smoothly zooms to it
+4. Right panel slides in
+5. User understands:
 
-  * Isolated hotspots
-  * Continuous exposure paths
-* The system feels **cleaner, not heavier**
+   * Why this corridor matters
+   * What type of green intervention fits
+6. User closes panel
+7. Map returns to exploration mode
 
----
+This **directly satisfies**:
 
-## VERIFICATION CHECKLIST
-
-Before marking complete:
-
-* Every point still renders
-* No point appears in two corridors
-* Changing `D_max` changes corridor shapes
-* Orphan points still visible
-* Corridor results are stable across reloads
+> “Identifies corridors”
+> “Suggests interventions per route”
+> “Practical, visual planning”
 
 ---
 
 ## FINAL INSTRUCTION
 
-Implement this as a **non-destructive aggregation layer**.
+Implement this cleanly, with:
 
-Add:
+* Minimal new state
+* Clear animations
+* No breaking changes
 
-* Clear comments explaining:
+At the end:
 
-  * Why distance-based connectivity was chosen
-  * Why points are preserved
+* Comment the classification logic
+* Add a small README note:
+  **“How intervention suggestions are derived”**
 
 ---
 
-## NOW IMPLEMENT THIS FEATURE.
+## NOW IMPLEMENT THIS PHASE.

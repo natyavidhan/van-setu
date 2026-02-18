@@ -1,7 +1,7 @@
 """
 FastAPI Application Entry Point
 
-Urban Green Corridor Planning Platform — Backend API
+VanSetu Platform — Backend API
 """
 import os
 from pathlib import Path
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     
     print("=" * 60)
-    print("🚀 Starting Urban Green Corridor Platform API")
+    print("🚀 Starting VanSetu Platform API")
     print("=" * 60)
     
     # Initialize all services
@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
     
     app = FastAPI(
         title=settings.app_name,
-        description="API for urban green corridor analysis and visualization",
+        description="API for VanSetu urban corridor analysis and visualization",
         version="1.0.0",
         lifespan=lifespan,
         docs_url="/docs",
@@ -70,7 +70,7 @@ def create_app() -> FastAPI:
     )
     
     # Import routers here to avoid circular imports
-    from app.routers import layers, tiles, roads, stats, aqi, corridors, suggestions
+    from app.routers import layers, tiles, roads, stats, aqi, corridors, suggestions, admin
     
     # Include routers
     app.include_router(layers.router, prefix=settings.api_prefix, tags=["Layers"])
@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(aqi.router, prefix=settings.api_prefix, tags=["Air Quality"])
     app.include_router(corridors.router, prefix=settings.api_prefix, tags=["Corridor Aggregation"])
     app.include_router(suggestions.router, prefix=settings.api_prefix, tags=["Community Suggestions"])
+    app.include_router(admin.router, prefix=settings.api_prefix, tags=["Admin Dashboard"])
     
     @app.get("/health", tags=["Health"])
     async def health_check():

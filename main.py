@@ -1,11 +1,11 @@
 """
-Urban Green Corridor Planning Platform — Visualization Generator
+VanSetu Platform — Visualization Generator
 
 A comprehensive geospatial visualization suite for pitch deck generation.
 Produces publication-quality cartographic outputs from raster and vector data.
 
 Author: Geospatial Analytics
-Purpose: Generate 6 core figures for urban green corridor planning platform
+Purpose: Generate 6 core figures for VanSetu planning platform
 """
 
 import os
@@ -57,7 +57,7 @@ TEXT_COLOR = '#333333'
 # COLOR MAPS
 CMAP_HEAT = plt.cm.RdYlBu_r  # Red for hot
 CMAP_NDVI = plt.cm.YlGn      # Green for vegetation
-# Priority: Green (already green, low GDI) → Yellow → Red (needs green corridors, high GDI)
+# Priority: Green (already green, low GDI) → Yellow → Red (needs VanSetu corridors, high GDI)
 CMAP_PRIORITY = LinearSegmentedColormap.from_list(
     'priority', ['#1a9850', '#fee090', '#d73027']  # Green → Yellow → Red
 )
@@ -708,12 +708,12 @@ def figure_5_street_level_priority_map(ndvi_data, lst_data, profile):
 
 def figure_6_example_green_corridor(ndvi_data, lst_data, profile):
     """
-    Figure 6: Example Green Corridor
+    Figure 6: Example VanSetu Corridor
     
     Highlight a single high-priority corridor; mute everything else.
     Purpose: "This is how intervention would be targeted"
     """
-    print("📊 Generating Figure 6: Example Green Corridor...")
+    print("📊 Generating Figure 6: Example VanSetu Corridor...")
     
     # Compute GDI
     gdi = compute_green_deficit_index(ndvi_data, lst_data)
@@ -772,7 +772,7 @@ def figure_6_example_green_corridor(ndvi_data, lst_data, profile):
     # Title
     ax.text(
         0.5, 0.95,
-        'High-Priority Green Corridor Opportunity',
+        'High-Priority VanSetu Corridor Opportunity',
         ha='center', va='top',
         transform=ax.transAxes,
         fontsize=18, weight='bold',
@@ -806,7 +806,7 @@ def figure_7_continuous_map_story(ndvi_data, lst_data, profile):
     Generates three separate PNG files, each cropped to map content only:
     - 07a_city_today.png — Clean basemap with road network
     - 07b_priority_zones.png — GDI priority overlay  
-    - 07c_green_corridors.png — Proposed green corridors
+    - 07c_green_corridors.png — Proposed VanSetu corridors
     
     All panels share identical geographic extent for visual continuity.
     No titles, labels, padding, or text — pure map content only.
@@ -886,9 +886,9 @@ def figure_7_continuous_map_story(ndvi_data, lst_data, profile):
     plt.close(fig2)
     
     # -------------------------------------------------------------------------
-    # PANEL 3: "What We Can Do" — Green corridors
+    # PANEL 3: "What We Can Do" — VanSetu corridors
     # -------------------------------------------------------------------------
-    print("  📍 Generating Panel 3: Green Corridor Vision...")
+    print("  📍 Generating Panel 3: VanSetu Corridor Vision...")
     fig3, ax3 = plt.subplots(figsize=FIGSIZE_16_9, dpi=DPI)
     
     # Muted GDI background
@@ -898,13 +898,13 @@ def figure_7_continuous_map_story(ndvi_data, lst_data, profile):
     if len(roads) > 0:
         roads.plot(ax=ax3, color='#888888', linewidth=0.3, alpha=0.3)
     
-    # Green corridors
+    # VanSetu corridors
     if len(corridor_display) > 0:
         corridor_buffer = corridor_display.copy()
         corridor_buffer['geometry'] = corridor_buffer.geometry.buffer(0.005)
         corridor_buffer.plot(ax=ax3, color='#2ecc71', alpha=0.3, edgecolor='none')
         corridor_display.plot(ax=ax3, color='#27ae60', linewidth=2.5, alpha=0.9)
-        print(f"  ✓ Rendered {len(corridor_display)} green corridor segments")
+        print(f"  ✓ Rendered {len(corridor_display)} VanSetu corridor segments")
     
     ax3.set_xlim(extent[0], extent[1])
     ax3.set_ylim(extent[2], extent[3])
@@ -1018,7 +1018,7 @@ def print_usage():
     usage = """
 Usage: python main.py [OPTIONS] [FIGURES...]
 
-Generate urban green corridor visualizations for pitch deck.
+Generate VanSetu corridor visualizations for pitch deck.
 
 FIGURES:
   Specify which figures to generate (1-7). If none specified, generates all.
@@ -1028,7 +1028,7 @@ FIGURES:
   3  Heat vs Green Overlay (composite)
   4  Green Deficit Index (derived metric)
   5  Street-Level Priority Map (roads + GDI)
-  6  Example Green Corridor (highlighted priority zones)
+  6  Example VanSetu Corridor (highlighted priority zones)
   7  Continuous Map Story (3-panel narrative: city → problem → solution)
 
 OPTIONS:
@@ -1069,7 +1069,7 @@ def parse_arguments():
         print("  3: Heat vs Green Overlay")
         print("  4: Green Deficit Index")
         print("  5: Street-Level Priority Map")
-        print("  6: Example Green Corridor")
+        print("  6: Example VanSetu Corridor")
         print("  7: Continuous Map Story (3-panel narrative)")
         sys.exit(0)
     
@@ -1106,7 +1106,7 @@ def main():
     figures_to_generate, skip_osm = parse_arguments()
     
     print("=" * 80)
-    print("Urban Green Corridor Planning Platform — Visualization Generator")
+    print("VanSetu Platform — Visualization Generator")
     print("=" * 80)
     print(f"\nFigures to generate: {figures_to_generate}")
     

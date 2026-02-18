@@ -25,10 +25,11 @@ class TileService:
     }
     
     # Value ranges for normalization
+    # These are used for tile rendering; GDI uses actual data range (set at init)
     VALUE_RANGES = {
         'ndvi': (-0.2, 0.8),
-        'lst': (22, 32),
-        'gdi': (0, 1),
+        'lst': (24, 29),
+        'gdi': (0, 1),  # Will be overridden with actual data percentiles
     }
     
     def __init__(self, raster_service: RasterService, tile_size: int = 256):
@@ -36,10 +37,35 @@ class TileService:
         self.tile_size = tile_size
         self._cache = TTLCache(maxsize=1000, ttl=3600)
         
-        # Create custom GDI colormap (Green → Yellow → Red)
+        # Create custom GDI colormap (Green → Yellow-Green → Yellow → Orange → Red)
+        # 5-stop colormap gives better visual differentiation
         self._gdi_cmap = mcolors.LinearSegmentedColormap.from_list(
-            'gdi', ['#1a9850', '#fee090', '#d73027']
+            'gdi', ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027']
         )
+        
+        # Set GDI tile range to actual data percentiles for maximum color spread
+        gdi = raster_service.gdi
+        if gdi is not None:
+            valid = gdi[np.isfinite(gdi)]
+            if len(valid) > 0:
+                # Use P2–P98 to ignore outliers while spreading the color range
+                self.VALUE_RANGES = dict(self.VALUE_RANGES)  # Don't mutate class var
+                self.VALUE_RANGES['gdi'] = (
+                    float(np.percentile(valid, 2)),
+                    float(np.percentile(valid, 98))
+                )
+                print(f"  🎨 GDI tile range set to [{self.VALUE_RANGES['gdi'][0]:.3f}, {self.VALUE_RANGES['gdi'][1]:.3f}]")
+                
+                # Also set LST range based on actual data
+                lst = raster_service.lst
+                if lst is not None:
+                    valid_lst = lst[np.isfinite(lst)]
+                    if len(valid_lst) > 0:
+                        self.VALUE_RANGES['lst'] = (
+                            float(np.percentile(valid_lst, 2)),
+                            float(np.percentile(valid_lst, 98))
+                        )
+                        print(f"  🎨 LST tile range set to [{self.VALUE_RANGES['lst'][0]:.3f}, {self.VALUE_RANGES['lst'][1]:.3f}]")
     
     def get_tile(self, layer: str, z: int, x: int, y: int) -> Optional[bytes]:
         """

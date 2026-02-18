@@ -4,7 +4,7 @@
  * Updated to support AQI visualization, Multi-Exposure Priority scoring,
  * and Corridor Intervention panel with animated focus.
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { MapContainer, TileLayer, LayersControl, GeoJSON, useMap, useMapEvents, CircleMarker, Popup, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -93,7 +93,7 @@ function MapViewRestorer({ shouldRestore, previousView, onRestored }) {
  * Legend component for the active layer
  * Updated to reflect Multi-Exposure Priority scoring
  */
-function Legend({ activeLayer }) {
+const Legend = memo(function Legend({ activeLayer }) {
   const legends = {
     ndvi: {
       title: 'NDVI',
@@ -117,9 +117,9 @@ function Legend({ activeLayer }) {
   if (!legend) return null;
 
   return (
-    <div className="map-legend">
+    <div className="map-legend" role="figure" aria-label={`${legend.title} legend`}>
       <h4>{legend.title}</h4>
-      {legend.subtitle && <span className="legend-subtitle">{legend.subtitle}</span>}
+      {legend.subtitle ? <span className="legend-subtitle">{legend.subtitle}</span> : null}
       <div className="legend-gradient">
         {legend.colors.map((color, i) => (
           <div
@@ -135,12 +135,12 @@ function Legend({ activeLayer }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * Point info popup — shows all layer values including AQI
  */
-function PointInfo({ data, onClose }) {
+const PointInfo = memo(function PointInfo({ data, onClose }) {
   if (!data) return null;
 
   const getPriorityColor = (value) => {
@@ -170,28 +170,28 @@ function PointInfo({ data, onClose }) {
   const priorityValue = data.values.priority_score ?? data.values.gdi;
 
   return (
-    <div className="point-info">
-      <button className="close-btn" onClick={onClose}>×</button>
+    <div className="point-info" role="dialog" aria-label="Point analysis">
+      <button className="close-btn" onClick={onClose} aria-label="Close point info">×</button>
       <h4>📍 Point Analysis</h4>
       <div className="point-coords">
         {data.location.lat.toFixed(4)}°N, {data.location.lng.toFixed(4)}°E
       </div>
       <div className="point-values">
-        {data.values.ndvi !== null && (
+        {data.values.ndvi !== null ? (
           <div className="value-row">
             <span className="label">🌿 NDVI</span>
             <span className="value">{data.values.ndvi.toFixed(3)}</span>
             <span className="interpretation">{data.interpretation.vegetation}</span>
           </div>
-        )}
-        {data.values.lst !== null && (
+        ) : null}
+        {data.values.lst !== null ? (
           <div className="value-row">
             <span className="label">🌡️ LST</span>
             <span className="value">{data.values.lst.toFixed(1)}°C</span>
             <span className="interpretation">{data.interpretation.temperature}</span>
           </div>
-        )}
-        {data.values.aqi_raw !== null && data.values.aqi_raw !== undefined && (
+        ) : null}
+        {data.values.aqi_raw !== null && data.values.aqi_raw !== undefined ? (
           <div className="value-row">
             <span className="label">💨 PM2.5</span>
             <span 
@@ -202,13 +202,13 @@ function PointInfo({ data, onClose }) {
             </span>
             <span className="interpretation">
               {getAqiLabel(data.values.aqi_raw)}
-              {data.aqi_station && (
+              {data.aqi_station ? (
                 <span className="station-info"> ({data.aqi_station.name})</span>
-              )}
+              ) : null}
             </span>
           </div>
-        )}
-        {priorityValue !== null && priorityValue !== undefined && (
+        ) : null}
+        {priorityValue !== null && priorityValue !== undefined ? (
           <div className="value-row highlight">
             <span className="label">📊 Priority</span>
             <span 
@@ -219,11 +219,11 @@ function PointInfo({ data, onClose }) {
             </span>
             <span className="interpretation">{data.interpretation.priority}</span>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
-}
+});
 
 /**
  * Main Map component
@@ -291,8 +291,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
   }, []);
 
   // Style for corridors (high priority = red)
-  // Now uses priority_score (multi-exposure) instead of just GDI
-  // Supports hover highlighting and selection state
+  // Uses relative color scaling based on actual data range for visual contrast
   const corridorStyle = useCallback((feature) => {
     const priority = feature.properties?.priority_score ?? feature.properties?.gdi_mean ?? 0.5;
     const featureId = feature.properties?.name || feature.id || JSON.stringify(feature.geometry?.coordinates?.[0]);
@@ -300,16 +299,32 @@ export default function Map({ activeLayers, onStatsUpdate }) {
     const isSelected = selectedCorridor?.properties?.name === feature.properties?.name;
     const hasSelection = selectedCorridor !== null;
     
-    // Color based on priority or corridor type
-    let color;
-    const corridorType = feature.properties?.corridor_type;
-    if (corridorType === 'heat_dominated') color = '#d73027';
-    else if (corridorType === 'pollution_dominated') color = '#984ea3';
-    else if (corridorType === 'green_deficit') color = '#fc8d59';
-    else if (corridorType === 'mixed_exposure') color = '#ff7f00';
-    else if (priority > 0.7) color = '#d73027';      // Critical - dark red
-    else if (priority > 0.5) color = '#fc8d59'; // High - orange
-    else color = '#fee08b';                     // Moderate - yellow
+    // Normalize priority within the corridor dataset range for maximum color spread
+    // Use metadata range if available, otherwise sensible defaults
+    const pMin = corridors?.metadata?.priority_min ?? 0.3;
+    const pMax = corridors?.metadata?.priority_max ?? 0.7;
+    const range = pMax - pMin || 0.1;
+    const t = Math.max(0, Math.min(1, (priority - pMin) / range)); // 0 = lowest, 1 = highest
+    
+    // 5-stop color scale: green → yellow-green → yellow → orange → red
+    const colorStops = [
+      [26, 152, 80],    // #1a9850 - green (low priority)
+      [145, 207, 96],   // #91cf60 - yellow-green
+      [254, 224, 139],  // #fee08b - yellow
+      [252, 141, 89],   // #fc8d59 - orange
+      [215, 48, 39],    // #d73027 - red (high priority)
+    ];
+    
+    // Interpolate between color stops
+    const segIdx = Math.min(t * (colorStops.length - 1), colorStops.length - 1.001);
+    const i = Math.floor(segIdx);
+    const f = segIdx - i;
+    const c0 = colorStops[i];
+    const c1 = colorStops[Math.min(i + 1, colorStops.length - 1)];
+    const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+    const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+    const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+    const color = `rgb(${r}, ${g}, ${b})`;
     
     // If a corridor is selected, dim others
     if (hasSelection && !isSelected) {
@@ -335,12 +350,12 @@ export default function Map({ activeLayers, onStatsUpdate }) {
     
     return {
       color: isHovered ? '#00ffff' : color,
-      weight: isHovered ? 7 : 4,
-      opacity: isHovered ? 1 : 0.85,
+      weight: isHovered ? 7 : 5,
+      opacity: isHovered ? 1 : 0.9,
       lineCap: 'round',
       lineJoin: 'round',
     };
-  }, [hoveredCorridor, selectedCorridor]);
+  }, [hoveredCorridor, selectedCorridor, corridors]);
 
   // Style for roads (subtle gray)
   const roadStyle = {
@@ -462,9 +477,13 @@ export default function Map({ activeLayers, onStatsUpdate }) {
                 const roadName = props.name || 'Unnamed Road';
                 const featureId = props.name || feature.id || JSON.stringify(feature.geometry?.coordinates?.[0]);
                 
-                // Priority level styling
-                const priorityColor = priority > 0.7 ? '#d73027' : priority > 0.5 ? '#fc8d59' : '#91cf60';
-                const priorityLabel = priority > 0.7 ? 'Critical' : priority > 0.5 ? 'High' : 'Moderate';
+                // Use relative scaling for priority label
+                const pMin = corridors?.metadata?.priority_min ?? 0.3;
+                const pMax = corridors?.metadata?.priority_max ?? 0.7;
+                const pRange = pMax - pMin || 0.1;
+                const pNorm = Math.max(0, Math.min(1, (priority - pMin) / pRange));
+                const priorityColor = pNorm > 0.7 ? '#d73027' : pNorm > 0.4 ? '#fc8d59' : '#91cf60';
+                const priorityLabel = pNorm > 0.7 ? 'Critical' : pNorm > 0.4 ? 'High' : 'Moderate';
                 
                 // Only show tooltip if no corridor is selected
                 if (!selectedCorridor) {
@@ -611,12 +630,12 @@ export default function Map({ activeLayers, onStatsUpdate }) {
       {/* Loading indicators */}
       {(loading.corridors || loading.roads || loading.aqi) && (
         <div className="loading-indicator">
-          Loading {loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}...
+          Loading {loading.corridors ? 'corridors' : loading.aqi ? 'AQI stations' : 'roads'}…
         </div>
       )}
       
-      {/* Intervention Panel - slides in from right when corridor is selected */}
-      {isPanelOpen && selectedCorridor && (
+      {/* Intervention Panel — slides in from right when corridor is selected */}
+      {isPanelOpen && selectedCorridor ? (
         <InterventionPanel 
           corridor={selectedCorridor}
           onClose={() => {
@@ -625,7 +644,7 @@ export default function Map({ activeLayers, onStatsUpdate }) {
             setShouldRestoreView(true);
           }}
         />
-      )}
+      ) : null}
     </div>
   );
 }

@@ -15,17 +15,26 @@ import './InterventionPanel.css';
 import CommunitySuggestions from './CommunitySuggestions';
 import { suggestionsApi } from '../api';
 
-// Intervention icons for visual appeal
-const INTERVENTION_ICONS = {
-  "Street tree canopy": "🌳",
-  "Shaded pedestrian walkways": "☂️",
-  "Dense vegetation buffers": "🌲",
-  "Green screens along sidewalks": "🌿",
-  "Pocket green spaces": "🏞️",
-  "Cycle lanes with greening": "🚴",
-  "Combined tree planting and shading": "🌳",
-  "Multi-functional green infrastructure": "🌱"
-};
+// Keyword → icon mapping for dynamic intervention names
+const ICON_KEYWORDS = [
+  [/tree|canopy|neem|peepal|banyan|albizia|cassia|arjuna/i, "🌳"],
+  [/shade|cool|mist|reflective|solar/i, "☂️"],
+  [/hedge|buffer|screen|bamboo|filter|dust/i, "🌲"],
+  [/pocket|park|garden|micro-forest|miyawaki/i, "🏞️"],
+  [/cycle|pedestrian|walkway|boulevard/i, "🚴"],
+  [/wall|vertical|façade|creeper|climbing/i, "🌿"],
+  [/rain|bioswale|stormwater|drain/i, "💧"],
+  [/community|adopt|school|citizen|RWA/i, "🤝"],
+  [/AQI|monitor|display|sensor/i, "📊"],
+  [/food|market|composting/i, "🌱"],
+];
+
+function interventionIcon(text) {
+  for (const [re, icon] of ICON_KEYWORDS) {
+    if (re.test(text)) return icon;
+  }
+  return "🌱";
+}
 
 // Type labels for display
 const TYPE_LABELS = {
@@ -156,7 +165,7 @@ export default function InterventionPanel({ corridor, onClose }) {
           {interventions.map((intervention, idx) => (
             <div key={idx} className="intervention-item">
               <span className="intervention-icon">
-                {INTERVENTION_ICONS[intervention] || '🌿'}
+                {interventionIcon(intervention)}
               </span>
               <span className="intervention-text">{intervention}</span>
             </div>
@@ -171,9 +180,9 @@ export default function InterventionPanel({ corridor, onClose }) {
       </div>
       
       {/* Community Suggestions */}
-      {corridorId && (
+      {corridorId ? (
         <CommunitySuggestions corridorId={corridorId} />
-      )}
+      ) : null}
       
       {/* Footer hint */}
       <div className="panel-footer">

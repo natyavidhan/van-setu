@@ -1,7 +1,7 @@
 #!/bin/bash
-# Start script for Urban Green Corridor Platform
+# Start script for VanSetu Platform
 
-echo "🌿 Urban Green Corridor Platform"
+echo "🌿 VanSetu Platform"
 echo "================================="
 
 # Check if we're in the right directory

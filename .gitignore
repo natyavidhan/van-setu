@@ -5,3 +5,4 @@ __pycache__/
 backend/.env
 *.pyc
 .pytest_cache/
+.agents/

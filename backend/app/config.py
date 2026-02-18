@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # API Settings
-    app_name: str = "Urban Green Corridor Platform"
+    app_name: str = "VanSetu Platform"
     debug: bool = True
     api_prefix: str = "/api"
     
@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     # Normalization ranges
     ndvi_min: float = -0.2
     ndvi_max: float = 0.8
-    lst_min: float = 22.0
-    lst_max: float = 32.0
+    lst_min: float = 24.0
+    lst_max: float = 29.0
     
     # Tile settings
     tile_size: int = 256
@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     
     # Cache settings
     cache_ttl: int = 3600  # 1 hour
+    
+    # External API keys
+    openaq_api_key: str = ""
     
     @property
     def ndvi_full_path(self) -> Path:

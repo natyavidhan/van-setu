@@ -273,7 +273,7 @@ class RoadService:
         aqi_service: Optional["AQIService"] = None
     ) -> gpd.GeoDataFrame:
         """
-        Detect high-priority green corridors.
+        Detect high-priority VanSetu corridors.
         
         If aqi_service is provided, uses Multi-Exposure Priority score.
         Otherwise, falls back to original GDI-based scoring.

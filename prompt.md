@@ -187,7 +187,7 @@ Animations should feel **subtle and professional**, not flashy.
 
 ### Add small caption under the visual:
 
-> **“Conceptual illustration of a proposed green corridor intervention”**
+> **"Conceptual illustration of a proposed VanSetu corridor intervention"**
 
 Optional tooltip:
 

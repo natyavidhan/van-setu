@@ -1,5 +1,5 @@
 // =====================================================
-// Urban Green Corridor – NDVI + Heat (Clean MVP Script)
+// VanSetu – NDVI + Heat (Clean MVP Script)
 // =====================================================
 
 // ---------- 1) REGION ----------

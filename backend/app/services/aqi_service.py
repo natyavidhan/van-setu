@@ -17,7 +17,7 @@ Why AQI was added:
     - Air pollution exposure (AQI)
     
     This makes the priority score more defensible and aligned with public health
-    objectives, as green corridors can help with both heat mitigation AND
+    objectives, as VanSetu corridors can help with both heat mitigation AND
     air quality improvement through particulate capture.
 """
 import numpy as np
@@ -66,7 +66,6 @@ WAQI_TOKEN = "demo"  # Demo token works for basic requests
 # OpenAQ API configuration (v3 - requires API key)
 OPENAQ_BASE_URL = "https://api.openaq.org/v3"
 OPENAQ_LOCATIONS_ENDPOINT = "/locations"
-OPENAQ_API_KEY = "52874ea85b8806116b31cfacf037253ddf816dba988ed0716b7d0ff11943462e"
 
 # Delhi bounding box for station filtering
 DELHI_BBOX = {
@@ -376,7 +375,7 @@ class AQIService:
         url = f"{OPENAQ_BASE_URL}{OPENAQ_LOCATIONS_ENDPOINT}"
         headers = {
             "Accept": "application/json",
-            "X-API-Key": OPENAQ_API_KEY
+            "X-API-Key": self.settings.openaq_api_key
         }
         
         if HAS_HTTPX:

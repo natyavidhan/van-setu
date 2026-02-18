@@ -10,172 +10,377 @@ HOW INTERVENTION SUGGESTIONS ARE DERIVED:
 1. EXPOSURE SHARE CALCULATION:
    - Total = mean_heat + mean_aqi + mean_green_deficit
    - heat_share = mean_heat / Total
-   - pollution_share = mean_aqi / Total  
+   - pollution_share = mean_aqi / Total
    - green_share = mean_green_deficit / Total
 
-2. CLASSIFICATION RULES (deterministic):
-   - heat_dominated: heat_share >= 0.45
-   - pollution_dominated: pollution_share >= 0.40
-   - green_deficit: green_share >= 0.35
-   - mixed_exposure: none of the above
+2. CLASSIFICATION (primary + secondary):
+   - Primary type chosen by dominant share (heat / pollution / green_deficit / mixed)
+   - Secondary type chosen by second-highest share (adds cross-cutting suggestions)
 
-3. INTERVENTION MAPPING:
-   Each corridor type maps to specific, evidence-based green interventions
-   suitable for that exposure profile.
+3. SEVERITY TIER (from priority score):
+   - critical: priority >= 0.70
+   - high:     priority >= 0.50
+   - moderate: priority <  0.50
+
+4. INTERVENTION SELECTION (deterministic but diverse):
+   - 8–12 candidate interventions per type, split into severity tiers
+   - 2–3 picked from primary type based on severity
+   - 1 picked from secondary type (cross-cutting)
+   - 1 picked from contextual add-ons based on specific metric values
+   - A hash of the corridor's metric values rotates which candidates are
+     selected, so corridors with the same type but different values get
+     different suggestions.
 
 This approach ensures:
-- Deterministic, reproducible results
+- Deterministic, reproducible results — same corridor always gets same output
+- High diversity — even corridors of the same type get varied suggestions
 - No machine learning or complex models
 - Clear rationale for each suggestion
 - Actionable recommendations for urban planners
 """
 
+import hashlib
 from typing import Dict, List, Tuple, Optional
 
 
-# Static mapping: corridor type -> recommended interventions
-# Based on urban greening best practices for each exposure type
-INTERVENTION_MAP: Dict[str, Dict] = {
+# ──────────────────────────────────────────────────────────────────────────────
+# Intervention pools — evidence-based, split by severity tier
+# Each type has a large pool; the selector picks a subset per corridor.
+# ──────────────────────────────────────────────────────────────────────────────
+
+INTERVENTION_POOLS: Dict[str, Dict] = {
     "heat_dominated": {
-        "interventions": [
-            "Street tree canopy",
-            "Shaded pedestrian walkways"
-        ],
-        "rationale": "This corridor experiences high surface heat exposure with limited shade. Street trees and shaded walkways provide direct cooling through evapotranspiration and shade.",
         "icon": "🌡️",
-        "color": "#d73027"
+        "color": "#d73027",
+        "critical": [
+            "Dense shade tree canopy (Neem / Peepal / Banyan)",
+            "Cool pavement coating with high solar reflectance",
+            "Mist-cooling stations at pedestrian nodes",
+            "Shaded bus-stop green shelters",
+        ],
+        "high": [
+            "Linear street tree planting (min 8 m canopy spread)",
+            "Reflective roofing incentives for adjacent buildings",
+            "Pergola-covered walkways with climbing vines",
+            "Roadside bioswales with evaporative cooling effect",
+        ],
+        "moderate": [
+            "Median strip tree planting",
+            "Green awnings on south-facing facades",
+            "Light-colored permeable paving",
+            "Community shade garden along setback areas",
+        ],
     },
     "pollution_dominated": {
-        "interventions": [
-            "Dense vegetation buffers",
-            "Green screens along sidewalks"
-        ],
-        "rationale": "Air quality is the primary concern along this corridor. Dense vegetation acts as a natural filter, trapping particulate matter and improving breathability.",
         "icon": "💨",
-        "color": "#7b3294"
+        "color": "#7b3294",
+        "critical": [
+            "Multi-row dense vegetation buffer (3–5 m depth)",
+            "Vertical green walls on boundary walls",
+            "PM-trapping hedge rows (Thevetia / Ficus)",
+            "Anti-dust green mesh barriers during construction",
+        ],
+        "high": [
+            "Roadside dense shrub planting for particulate capture",
+            "Green screens on pedestrian-side railings",
+            "Staggered tree + shrub layering for max filtration",
+            "Dust-suppressing ground-cover planting on verges",
+        ],
+        "moderate": [
+            "Single-row pollution-tolerant tree planting",
+            "Green noise + dust barrier along flyover edges",
+            "Creeper-covered chain-link fencing",
+            "Raised planter beds with air-purifying species",
+        ],
     },
     "green_deficit": {
-        "interventions": [
-            "Pocket green spaces",
-            "Cycle lanes with greening"
-        ],
-        "rationale": "This corridor lacks vegetation connectivity. Adding pocket parks and green cycle lanes improves ecological corridors and pedestrian experience.",
         "icon": "🌿",
-        "color": "#1a9850"
+        "color": "#1a9850",
+        "critical": [
+            "Pocket park network (every 300 m along corridor)",
+            "Continuous green cycle lane with native planting",
+            "Reclaim unused road margin for micro-forests (Miyawaki)",
+            "Pedestrian-priority green boulevard redesign",
+        ],
+        "high": [
+            "Median green strip with flowering native species",
+            "Tree-lined footpath connecting existing parks",
+            "Corner-plot pocket gardens at intersections",
+            "Rain garden chain along roadside drains",
+        ],
+        "moderate": [
+            "Container-based mobile greenery at key junctions",
+            "Climbing-plant trellises on dividers and walls",
+            "Community-adopted verge planting program",
+            "Weekend pop-up green market zones",
+        ],
     },
     "mixed_exposure": {
-        "interventions": [
-            "Combined tree planting and shading",
-            "Multi-functional green infrastructure"
-        ],
-        "rationale": "This corridor faces multiple environmental challenges. A combined approach with diverse vegetation addresses heat, air quality, and greenery simultaneously.",
         "icon": "🌳",
-        "color": "#fc8d59"
-    }
+        "color": "#fc8d59",
+        "critical": [
+            "Multi-functional green corridor: shade + filtration + habitat",
+            "Integrated stormwater bio-retention with canopy trees",
+            "Complete street redesign: reduce lanes, add green median + buffers",
+            "Urban food forest pilot with canopy, shrub, and ground layers",
+        ],
+        "high": [
+            "Combined tree + shrub planting for cooling and dust capture",
+            "Green transit corridor: shaded BRT lane with vegetation buffer",
+            "Swale-and-shade parkway along arterial service road",
+            "Pollinator pathway with native wildflowers and shade trees",
+        ],
+        "moderate": [
+            "Tactical urbanism: painted + potted greenery pilot",
+            "Layered planting: ground cover + shrub + small tree",
+            "Neighbourhood green link connecting two open spaces",
+            "Green signage corridor: information boards + planting",
+        ],
+    },
 }
 
-# Classification thresholds
+
+# Contextual add-on interventions triggered by specific metric conditions.
+# Each entry: (condition_fn, suggestion_text)
+CONTEXTUAL_ADDONS: List[Tuple] = [
+    (lambda h, a, g, p: a is not None and a > 0.7,
+     "Install real-time AQI display boards to raise community awareness"),
+    (lambda h, a, g, p: h is not None and h > 0.8,
+     "Prioritize fast-growing shade species (e.g., Albizia, Cassia) for rapid canopy"),
+    (lambda h, a, g, p: g is not None and g > 0.8,
+     "Establish tree-adoption program with local residents and schools"),
+    (lambda h, a, g, p: p is not None and p > 0.75,
+     "Fast-track implementation: deploy pre-grown container trees for immediate impact"),
+    (lambda h, a, g, p: h is not None and a is not None and h > 0.5 and a > 0.5,
+     "Deploy smog-eating vertical gardens on adjacent building façades"),
+    (lambda h, a, g, p: g is not None and g < 0.3,
+     "Maintain and protect existing vegetation — add tree guards and no-parking zones"),
+    (lambda h, a, g, p: a is not None and a < 0.2,
+     "Focus on shade and aesthetics — install ornamental flowering tree avenues"),
+    (lambda h, a, g, p: p is not None and p < 0.35,
+     "Low-cost beautification: painted kerbs, potted plants, and community murals"),
+]
+
+
+# Classification thresholds (unchanged)
 HEAT_THRESHOLD = 0.45      # heat_share >= 0.45 → heat_dominated
 POLLUTION_THRESHOLD = 0.40  # pollution_share >= 0.40 → pollution_dominated
 GREEN_THRESHOLD = 0.35      # green_share >= 0.35 → green_deficit
 
 
+def _severity_tier(priority: Optional[float]) -> str:
+    """Map priority score to severity tier."""
+    if priority is None:
+        return "high"
+    if priority >= 0.70:
+        return "critical"
+    if priority >= 0.50:
+        return "high"
+    return "moderate"
+
+
+def _deterministic_pick(items: List[str], seed: float, count: int) -> List[str]:
+    """
+    Deterministically pick `count` items from `items` using a float seed.
+    
+    Uses a hash of the seed to generate an offset so corridors with different
+    metric values select different items even from the same pool.
+    """
+    if not items:
+        return []
+    count = min(count, len(items))
+    # Convert seed to a stable integer via md5
+    digest = hashlib.md5(f"{seed:.6f}".encode()).hexdigest()
+    offset = int(digest[:8], 16)
+    picked = []
+    for i in range(count):
+        idx = (offset + i * 7) % len(items)   # stride of 7 for spread
+        if items[idx] not in picked:
+            picked.append(items[idx])
+        else:
+            # collision — walk forward to find unused item
+            for j in range(1, len(items)):
+                alt = (idx + j) % len(items)
+                if items[alt] not in picked:
+                    picked.append(items[alt])
+                    break
+    return picked
+
+
 def classify_corridor(
     mean_heat: Optional[float],
     mean_aqi: Optional[float],
-    mean_ndvi: Optional[float]
-) -> Tuple[str, Dict]:
+    mean_ndvi: Optional[float],
+    priority: Optional[float] = None,
+) -> Tuple[str, str, Dict]:
     """
-    Classify a corridor based on its dominant exposure type.
+    Classify a corridor and return its type, secondary type, and exposure shares.
     
-    Args:
-        mean_heat: Normalized heat exposure [0, 1]
-        mean_aqi: Normalized AQI exposure [0, 1]
-        mean_ndvi: Normalized vegetation index [0, 1]
-        
     Returns:
-        Tuple of (corridor_type, intervention_info)
+        Tuple of (primary_type, secondary_type, shares_dict)
     """
-    # Handle missing values with defaults
     heat = mean_heat if mean_heat is not None else 0.0
     aqi = mean_aqi if mean_aqi is not None else 0.0
-    
-    # Green deficit = inverse of NDVI (low vegetation = high deficit)
     green_deficit = (1.0 - mean_ndvi) if mean_ndvi is not None else 0.5
-    
-    # Calculate total exposure
+
     total = heat + aqi + green_deficit
-    
-    # Avoid division by zero
     if total < 0.001:
-        return "mixed_exposure", INTERVENTION_MAP["mixed_exposure"]
-    
-    # Calculate exposure shares
-    heat_share = heat / total
-    pollution_share = aqi / total
-    green_share = green_deficit / total
-    
-    # Apply classification rules (in priority order)
-    if heat_share >= HEAT_THRESHOLD:
-        corridor_type = "heat_dominated"
-    elif pollution_share >= POLLUTION_THRESHOLD:
-        corridor_type = "pollution_dominated"
-    elif green_share >= GREEN_THRESHOLD:
-        corridor_type = "green_deficit"
+        return "mixed_exposure", "green_deficit", {
+            "heat_share": 0.33, "pollution_share": 0.33, "green_share": 0.33
+        }
+
+    shares = {
+        "heat_share": heat / total,
+        "pollution_share": aqi / total,
+        "green_share": green_deficit / total,
+    }
+
+    # Rank shares to get primary and secondary
+    type_map = [
+        ("heat_dominated", shares["heat_share"]),
+        ("pollution_dominated", shares["pollution_share"]),
+        ("green_deficit", shares["green_share"]),
+    ]
+    type_map.sort(key=lambda x: x[1], reverse=True)
+
+    primary_type = type_map[0][0]
+    secondary_type = type_map[1][0]
+
+    # Apply thresholds — if nothing clears, fall back to mixed
+    if shares["heat_share"] >= HEAT_THRESHOLD:
+        primary_type = "heat_dominated"
+    elif shares["pollution_share"] >= POLLUTION_THRESHOLD:
+        primary_type = "pollution_dominated"
+    elif shares["green_share"] >= GREEN_THRESHOLD:
+        primary_type = "green_deficit"
     else:
-        corridor_type = "mixed_exposure"
+        primary_type = "mixed_exposure"
+
+    return primary_type, secondary_type, shares
+
+
+def select_interventions(
+    primary_type: str,
+    secondary_type: str,
+    tier: str,
+    mean_heat: Optional[float],
+    mean_aqi: Optional[float],
+    mean_green_deficit: Optional[float],
+    priority: Optional[float],
+) -> Tuple[List[str], str]:
+    """
+    Select a diverse set of 3–5 interventions for a corridor.
     
-    return corridor_type, INTERVENTION_MAP[corridor_type]
+    Returns:
+        (list_of_interventions, rationale_text)
+    """
+    pool_primary = INTERVENTION_POOLS.get(primary_type, INTERVENTION_POOLS["mixed_exposure"])
+    pool_secondary = INTERVENTION_POOLS.get(secondary_type, INTERVENTION_POOLS["mixed_exposure"])
+
+    # Build a seed from the actual metric values for deterministic rotation
+    seed = (
+        (mean_heat or 0.0) * 1000
+        + (mean_aqi or 0.0) * 100
+        + (mean_green_deficit or 0.0) * 10
+        + (priority or 0.0)
+    )
+
+    # 1) Pick 2 from primary type at the right severity tier
+    primary_candidates = pool_primary.get(tier, pool_primary["high"])
+    primary_picks = _deterministic_pick(primary_candidates, seed, 2)
+
+    # 2) Pick 1 from secondary type (cross-cutting) — use a shifted seed
+    secondary_candidates = pool_secondary.get(tier, pool_secondary["high"])
+    secondary_picks = _deterministic_pick(secondary_candidates, seed + 999, 1)
+
+    # 3) Pick 1 contextual add-on
+    contextual_picks = []
+    for condition_fn, suggestion in CONTEXTUAL_ADDONS:
+        try:
+            if condition_fn(mean_heat, mean_aqi, mean_green_deficit, priority):
+                contextual_picks.append(suggestion)
+        except Exception:
+            pass
+    # Deterministically pick 1 from qualifying contextual add-ons
+    if contextual_picks:
+        contextual_pick = _deterministic_pick(contextual_picks, seed + 777, 1)
+    else:
+        contextual_pick = []
+
+    # Combine — deduplicate while preserving order
+    all_picks: List[str] = []
+    for item in primary_picks + secondary_picks + contextual_pick:
+        if item not in all_picks:
+            all_picks.append(item)
+
+    # Build rationale
+    type_labels = {
+        "heat_dominated": "extreme surface heat",
+        "pollution_dominated": "high air pollution",
+        "green_deficit": "severe vegetation deficit",
+        "mixed_exposure": "multiple environmental stressors",
+    }
+    primary_label = type_labels.get(primary_type, "environmental stress")
+    secondary_label = type_labels.get(secondary_type, "secondary exposure")
+    tier_label = {"critical": "Critical", "high": "High", "moderate": "Moderate"}[tier]
+
+    rationale = (
+        f"{tier_label}-severity corridor primarily affected by {primary_label}, "
+        f"with secondary {secondary_label}. "
+        f"Interventions target the dominant exposure while addressing co-benefits."
+    )
+
+    return all_picks, rationale
 
 
 def enrich_corridor_with_interventions(corridor_properties: Dict) -> Dict:
     """
     Enrich corridor properties with intervention classification and suggestions.
-    
-    Args:
-        corridor_properties: Existing corridor properties dict
-        
-    Returns:
-        Enriched properties dict with intervention data
     """
-    # Extract exposure metrics
     mean_heat = corridor_properties.get('heat_norm')
     mean_aqi = corridor_properties.get('aqi_norm')
     mean_ndvi = corridor_properties.get('ndvi_norm')
-    
-    # Classify and get interventions
-    corridor_type, intervention_info = classify_corridor(mean_heat, mean_aqi, mean_ndvi)
-    
-    # Add new fields without removing existing ones
+    priority = corridor_properties.get('priority')
+
+    green_deficit_val = (1.0 - mean_ndvi) if mean_ndvi is not None else 0.5
+
+    primary_type, secondary_type, shares = classify_corridor(
+        mean_heat, mean_aqi, mean_ndvi, priority
+    )
+    tier = _severity_tier(priority)
+
+    interventions, rationale = select_interventions(
+        primary_type, secondary_type, tier,
+        mean_heat, mean_aqi, green_deficit_val, priority,
+    )
+
+    pool = INTERVENTION_POOLS.get(primary_type, INTERVENTION_POOLS["mixed_exposure"])
+
     enriched = dict(corridor_properties)
-    enriched['corridor_type'] = corridor_type
-    enriched['corridor_type_icon'] = intervention_info['icon']
-    enriched['corridor_type_color'] = intervention_info['color']
-    enriched['recommended_interventions'] = intervention_info['interventions']
-    enriched['intervention_rationale'] = intervention_info['rationale']
-    
+    enriched['corridor_type'] = primary_type
+    enriched['corridor_type_secondary'] = secondary_type
+    enriched['severity_tier'] = tier
+    enriched['corridor_type_icon'] = pool['icon']
+    enriched['corridor_type_color'] = pool['color']
+    enriched['recommended_interventions'] = interventions
+    enriched['intervention_rationale'] = rationale
+
     return enriched
 
 
 def enrich_geojson_corridors(geojson: Dict) -> Dict:
     """
     Enrich all corridors in a GeoJSON FeatureCollection with intervention data.
-    
-    Args:
-        geojson: GeoJSON FeatureCollection
-        
-    Returns:
-        Enriched GeoJSON with intervention data in each feature's properties
     """
     if not geojson or 'features' not in geojson:
         return geojson
-    
+
     enriched_features = []
     for feature in geojson.get('features', []):
         if feature.get('properties'):
             feature['properties'] = enrich_corridor_with_interventions(feature['properties'])
         enriched_features.append(feature)
-    
+
     return {
         **geojson,
         'features': enriched_features

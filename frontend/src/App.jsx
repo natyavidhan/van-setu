@@ -1,37 +1,20 @@
 /**
- * App Component — Main application layout
+ * App Component — Main application with route-based layout
+ *
+ * Routes:
+ *   /       — Public dashboard (map + sidebar)
+ *   /admin  — Government / Business dashboard
  */
-import { useState } from 'react';
-import Map from './components/Map';
-import Sidebar from './components/Sidebar';
+import { Routes, Route } from 'react-router-dom';
+import PublicDashboard from './pages/PublicDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import './App.css';
 
 export default function App() {
-  // Layer visibility state
-  const [activeLayers, setActiveLayers] = useState({
-    ndvi: false,
-    lst: false,
-    gdi: true,  // Default: show GDI
-    roads: false,
-    corridors: true,  // Green corridors - default on
-    aqi: false,  // AQI stations layer
-    // OSM overlay layers (translucent)
-    osmRoads: false,     // OSM roads overlay
-    osmParks: false,     // OSM parks/green spaces overlay
-    osmResidential: false, // OSM residential areas overlay
-  });
-
   return (
-    <div className="app">
-      <Sidebar 
-        activeLayers={activeLayers} 
-        setActiveLayers={setActiveLayers}
-      />
-      <main className="main-content">
-        <Map 
-          activeLayers={activeLayers}
-        />
-      </main>
-    </div>
+    <Routes>
+      <Route path="/" element={<PublicDashboard />} />
+      <Route path="/admin/*" element={<AdminDashboard />} />
+    </Routes>
   );
 }

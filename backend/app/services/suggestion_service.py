@@ -399,3 +399,27 @@ class SuggestionService:
         upvotes_collection = self._db["corridor_upvotes"]
         doc = upvotes_collection.find_one({"corridor_id": corridor_id})
         return doc.get("upvotes", 0) if doc else 0
+
+    def get_all_suggestions(self) -> list:
+        """Get all suggestions across all corridors (for admin review)."""
+        if not self.is_connected:
+            return []
+        
+        try:
+            cursor = self._collection.find(
+                {},
+                {"_id": 1, "corridor_id": 1, "text": 1, "upvotes": 1, "created_at": 1}
+            ).sort("created_at", -1).limit(200)
+            
+            results = []
+            for doc in cursor:
+                results.append({
+                    "id": str(doc["_id"]),
+                    "corridor_id": doc.get("corridor_id", ""),
+                    "text": doc.get("text", ""),
+                    "upvotes": doc.get("upvotes", 0),
+                    "created_at": doc.get("created_at", ""),
+                })
+            return results
+        except Exception:
+            return []

@@ -1,46 +1,54 @@
 /**
  * Sidebar Component — Layer controls and statistics
- * 
+ *
  * Updated to support AQI layer toggle and Multi-Exposure Priority scoring.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
+import { Link } from 'react-router-dom';
 import { statsApi, layersApi, aqiApi } from '../api';
 import './Sidebar.css';
 
 /**
- * Toggle switch component
+ * Toggle switch component — uses real checkbox for accessibility
  */
-function Toggle({ checked, onChange, label, color }) {
+const Toggle = memo(function Toggle({ checked, onChange, label, color }) {
   return (
     <label className="toggle-row">
-      <div className="toggle-label">
-        {color && <span className="layer-indicator" style={{ backgroundColor: color }} />}
+      <span className="toggle-label">
+        {color ? <span className="layer-indicator" style={{ backgroundColor: color }} aria-hidden="true" /> : null}
         {label}
-      </div>
-      <div className={`toggle-switch ${checked ? 'active' : ''}`} onClick={onChange}>
-        <div className="toggle-knob" />
-      </div>
+      </span>
+      <input
+        type="checkbox"
+        className="toggle-input sr-only"
+        checked={checked}
+        onChange={onChange}
+        aria-label={`Toggle ${label}`}
+      />
+      <span className={`toggle-switch ${checked ? 'active' : ''}`} aria-hidden="true">
+        <span className="toggle-knob" />
+      </span>
     </label>
   );
-}
+});
 
 /**
  * Stats card component
  */
-function StatCard({ title, value, unit, icon }) {
+const StatCard = memo(function StatCard({ title, value, unit, icon }) {
   return (
     <div className="stat-card">
-      <div className="stat-icon">{icon}</div>
+      <span className="stat-icon" aria-hidden="true">{icon}</span>
       <div className="stat-content">
-        <div className="stat-value">
+        <span className="stat-value">
           {typeof value === 'number' ? value.toFixed(2) : value || '—'}
-          {unit && <span className="stat-unit">{unit}</span>}
-        </div>
-        <div className="stat-title">{title}</div>
+          {unit ? <span className="stat-unit">{unit}</span> : null}
+        </span>
+        <span className="stat-title">{title}</span>
       </div>
     </div>
   );
-}
+});
 
 /**
  * Main Sidebar component
@@ -86,13 +94,13 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" role="complementary" aria-label="Dashboard controls">
       {/* Header */}
       <div className="sidebar-header">
         <div className="logo">
-          <span className="logo-icon">🌿</span>
+          <span className="logo-icon" aria-hidden="true">🌿</span>
           <div className="logo-text">
-            <h1>Green Corridor</h1>
+            <h1>VanSetu</h1>
             <span className="subtitle">Delhi NCT Analysis</span>
           </div>
         </div>
@@ -100,19 +108,21 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
 
       {/* Layer Controls */}
       <div className="sidebar-section">
-        <div 
+        <button
           className="section-header"
           onClick={() => toggleSection('layers')}
+          aria-expanded={expanded.layers}
+          aria-controls="section-layers"
         >
-          <h3>📊 Data Layers</h3>
-          <span className={`chevron ${expanded.layers ? 'open' : ''}`}>▼</span>
-        </div>
-        
-        {expanded.layers && (
-          <div className="section-content">
+          <h3>Data Layers</h3>
+          <span className={`chevron ${expanded.layers ? 'open' : ''}`} aria-hidden="true">▼</span>
+        </button>
+
+        {expanded.layers ? (
+          <div className="section-content" id="section-layers">
             {/* Raster layers */}
-            <div className="layer-group">
-              <div className="group-label">Raster Data</div>
+            <fieldset className="layer-group">
+              <legend className="group-label">Raster Data</legend>
               <Toggle
                 label="Vegetation (NDVI)"
                 checked={activeLayers.ndvi}
@@ -123,19 +133,19 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 label="Temperature (LST)"
                 checked={activeLayers.lst}
                 onChange={() => toggleLayer('lst')}
-                color="#d73027"
+                color="#e05252"
               />
               <Toggle
                 label="Multi-Exposure Priority"
                 checked={activeLayers.gdi}
                 onChange={() => toggleLayer('gdi')}
-                color="#fee08b"
+                color="#f2c94c"
               />
-            </div>
+            </fieldset>
 
             {/* Vector layers */}
-            <div className="layer-group">
-              <div className="group-label">Vector Data</div>
+            <fieldset className="layer-group">
+              <legend className="group-label">Vector Data</legend>
               <Toggle
                 label="Road Network"
                 checked={activeLayers.roads}
@@ -143,7 +153,7 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 color="#666"
               />
               <Toggle
-                label="Green Corridors"
+                label="VanSetu Corridors"
                 checked={activeLayers.corridors}
                 onChange={() => toggleLayer('corridors')}
                 color="#fc8d59"
@@ -154,11 +164,11 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 onChange={() => toggleLayer('aqi')}
                 color="#7b3294"
               />
-            </div>
+            </fieldset>
 
             {/* OSM Overlay layers */}
-            <div className="layer-group">
-              <div className="group-label">OSM Overlays</div>
+            <fieldset className="layer-group">
+              <legend className="group-label">OSM Overlays</legend>
               <Toggle
                 label="Roads Overlay"
                 checked={activeLayers.osmRoads}
@@ -166,7 +176,7 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 color="#888888"
               />
               <Toggle
-                label="Parks & Green"
+                label="Parks &amp; Green"
                 checked={activeLayers.osmParks}
                 onChange={() => toggleLayer('osmParks')}
                 color="#2d8b2d"
@@ -177,94 +187,85 @@ export default function Sidebar({ activeLayers, setActiveLayers }) {
                 onChange={() => toggleLayer('osmResidential')}
                 color="#c4a484"
               />
-            </div>
+            </fieldset>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Statistics */}
       <div className="sidebar-section">
-        <div 
+        <button
           className="section-header"
           onClick={() => toggleSection('stats')}
+          aria-expanded={expanded.stats}
+          aria-controls="section-stats"
         >
-          <h3>📈 Statistics</h3>
-          <span className={`chevron ${expanded.stats ? 'open' : ''}`}>▼</span>
-        </div>
+          <h3>Statistics</h3>
+          <span className={`chevron ${expanded.stats ? 'open' : ''}`} aria-hidden="true">▼</span>
+        </button>
 
-        {expanded.stats && (
-          <div className="section-content">
+        {expanded.stats ? (
+          <div className="section-content" id="section-stats">
             {loading ? (
-              <div className="loading-stats">Loading statistics...</div>
+              <div className="loading-stats" aria-live="polite">Loading statistics…</div>
             ) : stats ? (
               <div className="stats-grid">
-                <StatCard
-                  title="Mean NDVI"
-                  value={stats.ndvi?.mean}
-                  icon="🌿"
-                />
-                <StatCard
-                  title="Mean Temp"
-                  value={stats.lst?.mean}
-                  unit="°C"
-                  icon="🌡️"
-                />
-                <StatCard
-                  title="Mean Priority"
-                  value={stats.gdi?.mean}
-                  icon="📊"
-                />
-                <StatCard
-                  title="Avg PM2.5"
-                  value={aqiStatus?.average_pm25}
-                  icon="💨"
-                />
+                <StatCard title="Mean NDVI" value={stats.ndvi?.mean} icon="🌿" />
+                <StatCard title="Mean Temp" value={stats.lst?.mean} unit="°C" icon="🌡️" />
+                <StatCard title="Mean Priority" value={stats.gdi?.mean} icon="📊" />
+                <StatCard title="Avg PM2.5" value={aqiStatus?.average_pm25} icon="💨" />
               </div>
             ) : (
               <div className="no-stats">No statistics available</div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Info Section */}
       <div className="sidebar-section">
-        <div 
+        <button
           className="section-header"
           onClick={() => toggleSection('info')}
+          aria-expanded={expanded.info || false}
+          aria-controls="section-info"
         >
-          <h3>ℹ️ About</h3>
-          <span className={`chevron ${expanded.info ? 'open' : ''}`}>▼</span>
-        </div>
+          <h3>About</h3>
+          <span className={`chevron ${expanded.info ? 'open' : ''}`} aria-hidden="true">▼</span>
+        </button>
 
-        {expanded.info && (
-          <div className="section-content">
+        {expanded.info ? (
+          <div className="section-content" id="section-info">
             <div className="info-text">
               <p>
-                <strong>Multi-Exposure Priority Index</strong> combines heat stress, 
-                vegetation deficit, and air pollution to identify areas most in need 
+                <strong>Multi-Exposure Priority Index</strong> combines heat stress,
+                vegetation deficit, and air pollution to identify areas most in need
                 of green infrastructure.
               </p>
               <p className="formula">
-                Priority = 0.45 × Heat + 0.35 × (1 - NDVI) + 0.20 × AQI
+                Priority = 0.45 × Heat + 0.35 × (1 − NDVI) + 0.20 × AQI
               </p>
               <p className="formula-note">
                 When AQI data is unavailable, falls back to original GDI weights.
               </p>
               <p>
-                <strong>Click anywhere</strong> on the map to query layer 
+                <strong>Click anywhere</strong> on the map to query layer
                 values at that location.
               </p>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Footer */}
-      <div className="sidebar-footer">
-        <p>Urban Green Corridor Platform</p>
+      <footer className="sidebar-footer">
+        <Link to="/admin" className="admin-link">
+          Admin Dashboard
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </Link>
+        <p>VanSetu Platform</p>
         <p className="credits">innovateNSUT 2024</p>
-      </div>
+      </footer>
     </aside>
   );
 }

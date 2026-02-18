@@ -92,7 +92,7 @@ async def get_corridors(
     aqi_service: AQIService = Depends(get_aqi_service)
 ) -> Dict[str, Any]:
     """
-    Get high-priority green corridors as GeoJSON with intervention suggestions.
+    Get high-priority VanSetu corridors as GeoJSON with intervention suggestions.
     
     When include_aqi=true (default), corridors are ranked by Multi-Exposure Priority:
         Priority = 0.45 × Heat + 0.35 × Green Deficit + 0.20 × AQI
@@ -121,15 +121,27 @@ async def get_corridors(
         # Enrich corridors with intervention classification and suggestions
         enriched_geojson = enrich_geojson_corridors(geojson)
         
+        # Compute priority range so frontend can normalize colors
+        features = enriched_geojson.get("features", [])
+        priority_values = [
+            f["properties"].get("priority_score") or f["properties"].get("gdi_mean") or 0
+            for f in features
+            if f.get("properties")
+        ]
+        priority_min = min(priority_values) if priority_values else 0
+        priority_max = max(priority_values) if priority_values else 1
+        
         return {
             "type": "FeatureCollection",
-            "features": enriched_geojson.get("features", []),
+            "features": features,
             "metadata": {
-                "count": len(enriched_geojson.get("features", [])),
+                "count": len(features),
                 "percentile_threshold": percentile,
                 "scoring_method": scoring_method,
                 "description": f"Top {100-percentile:.0f}% highest priority road segments",
-                "includes_interventions": True
+                "includes_interventions": True,
+                "priority_min": priority_min,
+                "priority_max": priority_max
             }
         }
     except Exception as e:

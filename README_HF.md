@@ -1,5 +1,5 @@
 ---
-title: Urban Green Corridor Platform
+title: VanSetu Platform
 emoji: 🌳
 colorFrom: green
 colorTo: blue
@@ -8,16 +8,16 @@ pinned: false
 license: mit
 ---
 
-# Urban Green Corridor Planning Platform
+# VanSetu Platform
 
-An interactive platform for urban green corridor analysis and visualization for Delhi.
+An interactive platform for urban corridor analysis and visualization for Delhi.
 
 ## Features
 
 - 🗺️ Interactive map with NDVI, LST, and GDI layers
 - 📊 Statistical analysis of green coverage
 - 🌡️ Air quality monitoring integration
-- 🛤️ Green corridor planning tools
+- 🛤️ VanSetu corridor planning tools
 
 ## Tech Stack
 

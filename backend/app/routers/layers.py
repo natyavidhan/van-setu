@@ -64,7 +64,7 @@ async def list_layers(settings: Settings = Depends(get_settings)) -> Dict[str, A
             },
             {
                 "id": "corridors",
-                "name": "Proposed Green Corridors",
+                "name": "Proposed VanSetu Corridors",
                 "description": "High-priority road segments for green intervention",
                 "type": "vector",
                 "geometry": "LineString"

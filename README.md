@@ -7,9 +7,9 @@ sdk: docker
 pinned: false
 ---
 
-# Urban Green Corridor Platform
+# VanSetu Platform
 
-A full-stack web application for visualizing and analyzing urban green corridor planning data for Delhi NCT.
+A full-stack web application for visualizing and analyzing VanSetu corridor planning data for Delhi NCT.
 
 ## Architecture
 
